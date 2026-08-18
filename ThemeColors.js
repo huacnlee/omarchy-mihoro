@@ -12,4 +12,5 @@ function paletteColor(raw, name, fallbackName) {
   return fallback
 }
 
-function blue(raw) { return paletteColor(raw, "blue", "color4") }
+function green(raw) { return paletteColor(raw, "green", "color2") }
+function yellow(raw) { return paletteColor(raw, "yellow", "color3") }

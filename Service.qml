@@ -52,6 +52,7 @@ Item {
   property string actionKind: ""
   property string actionStatus: ""
   property string lastError: ""
+  property string lastWarning: ""
 
   readonly property int refreshIntervalSec: {
     var raw = settings ? settings.refreshIntervalSec : undefined
@@ -61,6 +62,7 @@ Item {
   }
 
   readonly property string home: Quickshell.env("HOME") || ""
+  readonly property string installScriptPath: localPath(Qt.resolvedUrl("scripts/install-mihoro"))
   readonly property string mihoroConfigPath: MihoroConfig.configPath(home)
   readonly property string mihomoConfigPath: MihoroConfig.mihomoConfigPath(config.mihomoConfigRoot, home)
   readonly property string mihomoBinaryPath: MihoroConfig.mihomoBinaryPath(config.mihomoBinaryPath, home)
@@ -81,11 +83,17 @@ Item {
 
   readonly property bool busy: probeProcess.running || configReadProcess.running
     || actionProcess.running || modeProcess.running || proxySelectProcess.running
-    || configWriteProcess.running
+    || configWriteProcess.running || installProcess.running
   readonly property bool actionRunning: actionProcess.running
   readonly property bool copyingProxyExport: proxyExportProcess.running || clipboardProcess.running
 
   signal actionFinished(string kind, bool ok)
+
+  function localPath(url) {
+    var value = String(url || "")
+    if (value.indexOf("file://") === 0) value = value.substring(7)
+    try { return decodeURIComponent(value) } catch (error) { return value }
+  }
 
   // ------------------------------------------------------------- refreshing
 
@@ -204,6 +212,20 @@ Item {
     actionStatus = "Exporting proxy info…"
     proxyExportProcess.command = Model.proxyExportCommand()
     proxyExportProcess.running = true
+  }
+
+  function installMihoro() {
+    if (installProcess.running) return
+    lastError = ""
+    lastWarning = ""
+    actionStatus = "Opening Mihoro installer…"
+    installProcess.command = Model.installCommand(installScriptPath)
+    installProcess.running = true
+  }
+
+  function clearNotice() {
+    lastError = ""
+    lastWarning = ""
   }
 
   // Setting the URL and pulling it are one gesture: writing the file alone
@@ -369,6 +391,31 @@ Item {
   }
 
   // ------------------------------------------------------------- processes
+
+  Process {
+    id: installProcess
+    running: false
+    command: []
+    stderr: StdioCollector { id: installErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        root.lastWarning = ""
+        root.actionStatus = "Mihoro installer opened in a terminal."
+        actionStatusTimer.restart()
+      } else {
+        var notice = Model.installExitNotice(exitCode, installErr.text)
+        root.actionStatus = ""
+        if (notice.kind === "warning") {
+          root.lastError = ""
+          root.lastWarning = Model.elide(notice.message, 240)
+        } else {
+          root.lastWarning = ""
+          root.lastError = Model.elide(notice.message || "Could not open the Mihoro installer.", 160)
+        }
+      }
+      settleTimer.restart()
+    }
+  }
 
   Process {
     id: configReadProcess

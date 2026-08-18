@@ -19,6 +19,18 @@ assert.deepStrictEqual(Array.from(model.startCommand()), ["mihoro", "start"])
 assert.deepStrictEqual(Array.from(model.stopCommand()), ["mihoro", "stop"])
 assert.deepStrictEqual(Array.from(model.restartCommand()), ["mihoro", "restart"])
 assert.deepStrictEqual(Array.from(model.proxyExportCommand()), ["mihoro", "proxy", "export"])
+assert.deepStrictEqual(Array.from(model.installCommand("/plugins/mihoro/scripts/install-mihoro")), [
+  "omarchy", "launch", "terminal", "/plugins/mihoro/scripts/install-mihoro", "--from-ui"
+])
+
+const hangupNotice = model.installExitNotice(1, `warn: wayland.c:1854: compositor does not implement
+the xdg-toplevel-icon protocol
+warn: terminal.c:2034: slave exited with signal 1 (Hangup)`)
+assert.strictEqual(hangupNotice.kind, "warning")
+assert.ok(hangupNotice.message.includes("Hangup"))
+assert.strictEqual(model.installExitNotice(1, "curl: could not resolve host").kind, "error")
+assert.strictEqual(model.installExitNotice(1, "warn: wayland.c:1854\ncurl failed").kind, "error")
+assert.strictEqual(model.installExitNotice(0, "").kind, "")
 
 for (const forbidden of ["uninstall", "upgrade", "install.sh", "curl -fsSL"])
   assert.ok(!JSON.stringify(model.PROBE_SCRIPT).includes(forbidden),
@@ -44,6 +56,7 @@ assert.deepStrictEqual(Array.from(model.probeCommand("/tmp/config.yaml")).slice(
 // ---------------------------------------------------------- probe parsing
 
 const PROBE_OUTPUT = `mihoro_bin=/home/ada/.local/bin/mihoro
+mihoro_version=mihoro 0.8.1
 mihomo_bin=/home/ada/.local/bin/mihomo
 LoadState=loaded
 ActiveState=active
@@ -59,6 +72,7 @@ now=1755432903
 
 const probe = model.parseProbe(PROBE_OUTPUT)
 assert.strictEqual(probe.mihoroInstalled, true)
+assert.strictEqual(probe.mihoroVersion, "mihoro 0.8.1")
 assert.strictEqual(probe.mihomoInstalled, true)
 assert.strictEqual(probe.mihomoPath, "/home/ada/.local/bin/mihomo")
 assert.strictEqual(probe.unitLoaded, true)
@@ -75,6 +89,7 @@ assert.strictEqual(probe.now, 1755432903)
 // rather than as an error.
 const bare = model.parseProbe("mihoro_bin=\nmihomo_bin=\nLoadState=not-found\nActiveState=inactive\nconfig_present=0\n")
 assert.strictEqual(bare.mihoroInstalled, false)
+assert.strictEqual(bare.mihoroVersion, "")
 assert.strictEqual(bare.mihomoInstalled, false)
 assert.strictEqual(bare.mihomoPath, "")
 assert.strictEqual(bare.unitLoaded, false)

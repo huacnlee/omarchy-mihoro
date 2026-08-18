@@ -7,11 +7,14 @@ import "../ThemeColors.js" as ThemeColors
 QtObject {
   id: root
 
-  property color blue: Color.accent
+  property color green: Color.accent
+  property color yellow: Color.accent
 
   function applyColors(raw) {
-    var blueValue = ThemeColors.blue(raw)
-    blue = blueValue === "" ? Color.accent : blueValue
+    var greenValue = ThemeColors.green(raw)
+    var yellowValue = ThemeColors.yellow(raw)
+    green = greenValue === "" ? Color.accent : greenValue
+    yellow = yellowValue === "" ? Color.accent : yellowValue
   }
 
   property FileView colorsFile: FileView {
@@ -22,7 +25,8 @@ QtObject {
     onLoaded: root.applyColors(text())
     onFileChanged: reload()
     onLoadFailed: {
-      root.blue = Color.accent
+      root.green = Color.accent
+      root.yellow = Color.accent
     }
   }
 

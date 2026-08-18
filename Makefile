@@ -3,11 +3,11 @@ QML_FILES := Panel.qml Service.qml \
 	components/MihoroIcon.qml \
 	components/SettingsIcon.qml \
 	components/SystemTheme.qml \
-	components/ServiceSwitch.qml \
 	components/StatRow.qml \
 	components/ModeSection.qml \
 	components/ConnectionSection.qml \
 	components/SubscriptionSection.qml \
+	components/InstallSection.qml \
 	components/SetupCard.qml \
 	components/PanelMenu.qml
 

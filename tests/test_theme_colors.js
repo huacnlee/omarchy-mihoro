@@ -3,7 +3,10 @@ const { load } = require("./load")
 
 const themeColors = load("ThemeColors.js")
 
-assert.strictEqual(themeColors.blue('blue = "#7aa2f7"\ncolor4 = "#0088ff"'), "#7aa2f7")
-assert.strictEqual(themeColors.blue('color4 = "#89b4fa"'), "#89b4fa")
-assert.strictEqual(themeColors.blue('accent = "#bb9af7"'), "")
+assert.strictEqual(themeColors.green('green = "#9ece6a"\ncolor2 = "#00aa00"'), "#9ece6a")
+assert.strictEqual(themeColors.green('color2 = "#a6e3a1"'), "#a6e3a1")
+assert.strictEqual(themeColors.green('accent = "#89b4fa"'), "")
+assert.strictEqual(themeColors.yellow('yellow = "#e0af68"\ncolor3 = "#ffaa00"'), "#e0af68")
+assert.strictEqual(themeColors.yellow('color3 = "#f9e2af"'), "#f9e2af")
+assert.strictEqual(themeColors.yellow('urgent = "#f38ba8"'), "")
 console.log("theme color tests passed")

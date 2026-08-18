@@ -30,9 +30,9 @@ function modeSelectionAction(next, current) {
 
 // ------------------------------------------------------------------ the CLI
 //
-// mihoro is installed by the user, not by this plugin: it owns the mihomo
-// binary, the systemd unit, and the subscription download, and the panel only
-// schedules it. Nothing here downloads or executes an installer.
+// mihoro owns the mihomo binary, the systemd unit, and the subscription
+// download. Installation stays interactive by opening the official installer
+// in an Omarchy-managed terminal, matching Omarchy's package/setup UI pattern.
 
 var INSTALL_DOCS_URL = "https://github.com/spencerwooo/mihoro#installation"
 var PROJECT_URL = "https://github.com/spencerwooo/mihoro"
@@ -44,6 +44,22 @@ function startCommand() { return ["mihoro", "start"] }
 function stopCommand() { return ["mihoro", "stop"] }
 function restartCommand() { return ["mihoro", "restart"] }
 function proxyExportCommand() { return ["mihoro", "proxy", "export"] }
+function installCommand(scriptPath) {
+  return ["omarchy", "launch", "terminal", String(scriptPath || ""), "--from-ui"]
+}
+
+function installExitNotice(exitCode, stderr) {
+  if (Number(exitCode) === 0) return { kind: "", message: "" }
+  var message = String(stderr || "").trim()
+  var lines = message.split("\n").filter(function(line) { return line.trim() !== "" })
+  var knownDiagnostic = lines.length > 0 && lines.every(function(line) {
+    var text = line.trim()
+    return text.indexOf("warn: wayland.c:") === 0
+      || text.indexOf("the xdg-toplevel-icon protocol") === 0
+      || (text.indexOf("warn: terminal.c:") === 0 && text.indexOf("Hangup") !== -1)
+  })
+  return { kind: knownDiagnostic ? "warning" : "error", message: message }
+}
 
 // One probe per refresh instead of five processes. It answers: is the CLI on
 // PATH, where is the mihomo binary, what does systemd think of mihomo.service,
@@ -61,7 +77,9 @@ function proxyExportCommand() { return ["mihoro", "proxy", "export"] }
 // trusted with.
 var PROBE_SCRIPT = [
   "unit=mihomo.service",
-  "printf 'mihoro_bin=%s\\n' \"$(command -v mihoro 2>/dev/null || true)\"",
+  "mihoro_bin=$(command -v mihoro 2>/dev/null || true)",
+  "printf 'mihoro_bin=%s\\n' \"$mihoro_bin\"",
+  "if [ -n \"$mihoro_bin\" ]; then printf 'mihoro_version=%s\\n' \"$(\"$mihoro_bin\" --version 2>/dev/null | head -n 1 || true)\"; fi",
   "mihomo_bin=${2:-}",
   "[ -n \"$mihomo_bin\" ] && [ -x \"$mihomo_bin\" ] || mihomo_bin=$(command -v mihomo 2>/dev/null || true)",
   "printf 'mihomo_bin=%s\\n' \"$mihomo_bin\"",
@@ -80,6 +98,7 @@ function probeCommand(mihomoConfigPath, mihomoBinaryPath) {
 function emptyProbe() {
   return {
     mihoroInstalled: false,
+    mihoroVersion: "",
     mihomoInstalled: false,
     mihomoPath: "",
     unitLoaded: false,
@@ -104,6 +123,7 @@ function parseProbe(text) {
     var key = line.substring(0, eq).trim()
     var value = line.substring(eq + 1).trim()
     if (key === "mihoro_bin") probe.mihoroInstalled = value !== ""
+    else if (key === "mihoro_version") probe.mihoroVersion = value
     else if (key === "mihomo_bin") { probe.mihomoPath = value; probe.mihomoInstalled = value !== "" }
     else if (key === "LoadState") probe.unitLoaded = value === "loaded"
     else if (key === "ActiveState") probe.activeState = value || "unknown"

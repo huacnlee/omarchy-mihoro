@@ -135,7 +135,7 @@ Column {
 
     Button {
       width: (subscriptionActions.width - subscriptionActions.spacing) / 2
-      text: root.url === "" ? "Add" : "Edit"
+      text: root.url === "" ? "Add..." : "Edit..."
       foreground: root.textColor
       bordered: true
       enabled: !root.service.busy

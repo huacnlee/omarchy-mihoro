@@ -1,13 +1,8 @@
 import QtQuick
-import Quickshell
 import qs.Commons
 import qs.Ui
-import "../Model.js" as Model
 
-// Shown until the panel has something real to drive. The plugin never installs
-// or upgrades mihoro: the CLI is the user's, installed by them, and this panel
-// only schedules it. So a missing CLI links to the official instructions rather
-// than running an installer.
+// Shown until the panel has something real to drive.
 Rectangle {
   id: root
 
@@ -18,6 +13,7 @@ Rectangle {
   property bool hasCursor: false
 
   signal addUrlRequested()
+  signal installRequested()
 
   readonly property bool missingCli: stateKey === "cli_missing"
 
@@ -50,7 +46,7 @@ Rectangle {
     Text {
       width: parent.width
       text: root.missingCli
-        ? "This panel drives the mihoro CLI; it does not install it. Install mihoro, then reopen this panel."
+        ? "Install the mihoro CLI to manage your Mihomo subscription and service from this panel."
         : "mihoro subscribes to one remote config URL. Add yours and mihoro will download it, install mihomo.service, and start the proxy."
       color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.58)
       font.family: root.panelFontFamily
@@ -60,17 +56,18 @@ Rectangle {
 
     Button {
       visible: root.missingCli
-      text: "Open installation guide"
+      text: "Install Mihoro..."
       foreground: root.textColor
       bordered: true
       fontSize: Style.font.bodySmall
+      enabled: !root.busy
       hasCursor: root.hasCursor
-      onClicked: Quickshell.execDetached(["xdg-open", Model.INSTALL_DOCS_URL])
+      onClicked: root.installRequested()
     }
 
     Button {
       visible: !root.missingCli
-      text: "Add subscription URL"
+      text: "Add subscription URL..."
       foreground: root.textColor
       bordered: true
       fontSize: Style.font.bodySmall

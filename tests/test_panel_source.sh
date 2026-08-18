@@ -94,11 +94,39 @@ grep -Fq 'iconSize: Style.space(12)' Panel.qml
 grep -Fq 'onCopyProxyRequested: mihoro.copyProxyExport()' Panel.qml
 grep -Fq 'text: "Copy proxy export"' components/PanelMenu.qml
 grep -Fq 'https://github.com/huacnlee/omarchy-mihoro' components/PanelMenu.qml
-sed -n '/id: menuButton/,/onClicked:/p' components/PanelMenu.qml | grep -Fq 'bordered: true'
+grep -Fq 'text: "Mihoro docs"' components/PanelMenu.qml
+! grep -Fq 'text: "Install Guides"' components/PanelMenu.qml
+! grep -Fq 'text: "Open install guide"' components/PanelMenu.qml
+grep -Fq 'Model.INSTALL_DOCS_URL' components/PanelMenu.qml
+grep -Fq 'text: "Mihoro"' components/PanelMenu.qml
+! grep -Fq 'text: "mihoro"' components/PanelMenu.qml
+! grep -Fq 'text: "Mihoro Docs"' components/PanelMenu.qml
+! grep -Fq 'https://wiki.metacubex.one' components/PanelMenu.qml
+grep -Fq 'text: "Subscription..."' components/PanelMenu.qml
+[[ "$(grep -n 'text: "Install Mihoro..."' components/PanelMenu.qml | cut -d: -f1)" -lt \
+   "$(grep -n 'text: "Subscription..."' components/PanelMenu.qml | cut -d: -f1)" ]]
+grep -Fq 'onSubscriptionRequested: root.openSubscriptionPage()' Panel.qml
+grep -Fq 'text: "Install Mihoro..."' components/PanelMenu.qml
+grep -Fq 'onInstallRequested: root.openInstallPage()' Panel.qml
+sed -n '/id: menuButton/,/onClicked:/p' components/PanelMenu.qml | grep -Fq 'bordered: false'
+[[ "$(grep -c 'PanelSeparator {' components/PanelMenu.qml)" -eq 3 ]]
 grep -Fq 'implicitWidth: Style.space(24)' components/PanelMenu.qml
 grep -Fq 'implicitHeight: Style.space(24)' components/PanelMenu.qml
 grep -Fq 'Model.proxyExportCommand()' Service.qml
 grep -Fq 'clipboardProcess.write(root._pendingClipboard)' Service.qml
+
+# Missing Mihoro is installed through an Omarchy-launched terminal, rather
+# than silently executing the network installer inside the shell process.
+grep -Fq 'text: "Install Mihoro..."' components/SetupCard.qml
+grep -Fq 'text: "Add subscription URL..."' components/SetupCard.qml
+grep -Fq 'onInstallRequested: root.openInstallPage()' Panel.qml
+grep -Fq 'Model.installCommand(installScriptPath)' Service.qml
+grep -Fq 'scripts/install-mihoro' Service.qml
+grep -Fq -- '--from-ui' scripts/install-mihoro
+grep -Fq 'property string lastWarning' Service.qml
+grep -Fq 'Model.installExitNotice' Service.qml
+grep -Fq 'onClicked: mihoro.clearNotice()' Panel.qml
+grep -Fq 'systemTheme.yellow' Panel.qml
 grep -Fq 'command: ["wl-copy"]' Service.qml
 
 # The popup is two internal pages, and every fresh open returns to the main
@@ -109,8 +137,25 @@ grep -Fq 'panelPage = 1' Panel.qml
 grep -Fq 'subscription.cancelEdit()' Panel.qml
 grep -Fq 'visible: root.panelPage === 1' Panel.qml
 grep -Fq 'visible: root.panelPage === 2' Panel.qml
+grep -Fq 'visible: root.panelPage === 3' Panel.qml
+grep -Fq 'text: "MIHORO INSTALLATION"' components/InstallSection.qml
+grep -Fq 'text: root.service.probe.mihoroInstalled ? "Mihoro installed" : "Not installed"' components/InstallSection.qml
+grep -Fq 'successColor: systemTheme.green' Panel.qml
+grep -Fq 'root.service.probe.mihoroInstalled ? root.successColor' components/InstallSection.qml
+grep -Fq 'root.service.probe.mihoroInstalled ? Qt.rgba(root.successColor.r' components/InstallSection.qml
+grep -Fq 'text: root.service.probe.mihoroVersion' components/InstallSection.qml
+grep -Fq 'text: "Install Now"' components/InstallSection.qml
+grep -Fq 'iconText: "+"' components/InstallSection.qml
+! grep -Fq 'text: "Install Mihoro..."' components/InstallSection.qml
+grep -Fq 'onInstallRequested: mihoro.installMihoro()' Panel.qml
 grep -Fq 'onSubscriptionRequested: root.openSubscriptionPage()' Panel.qml
 grep -Fq 'SettingsIcon {' components/ModeSection.qml
+grep -Fq 'tooltipText: "Manage subscription..."' components/ModeSection.qml
+grep -Fq 'id: gear' components/SettingsIcon.qml
+grep -Fq 'for (var i = 0; i < 8; ++i)' components/SettingsIcon.qml
+! grep -Fq 'id: sliders' components/SettingsIcon.qml
+! grep -Fq 'id: subscriptionGlyph' components/SettingsIcon.qml
+! grep -Fq 'id: wrenchGlyph' components/SettingsIcon.qml
 grep -Fq 'PanelActionButton {' components/ModeSection.qml
 grep -Fq 'id: modeControlRow' components/ModeSection.qml
 grep -Fq 'width: modeControlRow.width - subscriptionButton.width - modeControlRow.spacing' components/ModeSection.qml
@@ -124,7 +169,7 @@ grep -Fq 'if (root.panelPage === 2) root.leaveSubscriptionPage()' Panel.qml
 # Page two owns subscription editing. Read-only mode never renders the URL;
 # only the named Edit/Add action opens the field.
 grep -Fq 'text: "SUBSCRIPTION"' components/SubscriptionSection.qml
-grep -Fq 'text: root.url === "" ? "Add" : "Edit"' components/SubscriptionSection.qml
+grep -Fq 'text: root.url === "" ? "Add..." : "Edit..."' components/SubscriptionSection.qml
 grep -Fq 'text: root.updating ? "Updating…" : "Update"' components/SubscriptionSection.qml
 grep -Fq 'text: root.service.probe.configPresent ? "Update" : "Save and set up"' components/SubscriptionSection.qml
 grep -Fq 'QQC.TextArea {' components/SubscriptionSection.qml
@@ -147,19 +192,14 @@ grep -Fq 'key === "r"' Panel.qml
 grep -Fq 'key === "u"' Panel.qml
 grep -Fq 'key === "e"' Panel.qml
 grep -Fq 'root.requestMode("global")' Panel.qml
-grep -Fq 'ServiceSwitch {' Panel.qml
-grep -Fq 'onColor: systemTheme.blue' Panel.qml
-grep -Fq 'knobOnColor: Color.background' Panel.qml
-grep -Fq 'property color onColor: Color.accent' components/ServiceSwitch.qml
-grep -Fq 'property color knobOnColor: Color.foreground' components/ServiceSwitch.qml
-! grep -Fq 'knobBorderColor' components/ServiceSwitch.qml
-grep -Fq 'property color offColor: Qt.darker(foreground, 1.6)' components/ServiceSwitch.qml
-grep -Fq 'readonly property int trackHeight: Style.space(24)' components/ServiceSwitch.qml
-grep -Fq 'implicitHeight: trackHeight' components/ServiceSwitch.qml
-! grep -Fq 'property bool hasCursor' components/ServiceSwitch.qml
-! grep -Fq 'visible: root.hasCursor' components/ServiceSwitch.qml
-grep -Fq 'color: root.checked ? root.knobOnColor : Qt.lighter(root.offColor, 1.7)' components/ServiceSwitch.qml
-! grep -Eq '#[0-9a-fA-F]{6}' components/ServiceSwitch.qml
+grep -Fq 'ToggleSwitch {' Panel.qml
+grep -Fq 'cursorRing: false' Panel.qml
+! grep -Fq 'hasCursor: root.cursorTarget === "power"' Panel.qml
+grep -Fq 'text: "Current status: " + mihoro.connection.label' Panel.qml
+! grep -Fq 'text: mihoro.active ? "Stop mihomo" : "Start mihomo"' Panel.qml
+! grep -Fq 'onColor: systemTheme.blue' Panel.qml
+! grep -Fq 'knobOnColor:' Panel.qml
+[[ ! -e components/ServiceSwitch.qml ]]
 
 # IPC is how the rest of Omarchy drives the panel.
 grep -Fq 'function mode(value: string): string' Panel.qml

@@ -3,6 +3,7 @@ import QtQuick.Controls as QQC
 import Quickshell
 import qs.Commons
 import qs.Ui
+import "../Model.js" as Model
 
 // Links out, plus the one maintenance action a status panel needs. No
 // uninstall, no upgrade, nothing that changes what is on this machine beyond
@@ -13,11 +14,14 @@ Item {
   required property color textColor
   required property string panelFontFamily
   property string dashboardUrl: ""
+  property bool canOpenSubscription: false
   property bool canRestart: false
   property bool canCopyProxy: false
 
   signal restartRequested()
   signal copyProxyRequested()
+  signal installRequested()
+  signal subscriptionRequested()
 
   implicitWidth: Style.space(24)
   implicitHeight: Style.space(24)
@@ -32,7 +36,7 @@ Item {
     anchors.fill: parent
     text: "⋮"
     foreground: root.textColor
-    bordered: true
+    bordered: false
     onClicked: menu.opened ? menu.close() : menu.open()
   }
 
@@ -61,14 +65,49 @@ Item {
         enabled: root.dashboardUrl !== ""
         onActivated: root.openUrl(root.dashboardUrl)
       }
+      Item {
+        width: menu.width - menu.leftPadding - menu.rightPadding
+        implicitHeight: Style.space(7)
+        PanelSeparator {
+          anchors.verticalCenter: parent.verticalCenter
+          width: parent.width
+          foreground: root.textColor
+        }
+      }
+
+      MenuRow {
+        text: "Install Mihoro..."
+        onActivated: {
+          menu.close()
+          root.installRequested()
+        }
+      }
+      MenuRow {
+        text: "Subscription..."
+        enabled: root.canOpenSubscription
+        onActivated: {
+          menu.close()
+          root.subscriptionRequested()
+        }
+      }
+
+      Item {
+        width: menu.width - menu.leftPadding - menu.rightPadding
+        implicitHeight: Style.space(7)
+        PanelSeparator {
+          anchors.verticalCenter: parent.verticalCenter
+          width: parent.width
+          foreground: root.textColor
+        }
+      }
+
       MenuRow {
         text: "GitHub"
         onActivated: root.openUrl("https://github.com/huacnlee/omarchy-mihoro")
       }
-      MenuRow { text: "mihoro"; onActivated: root.openUrl("https://github.com/spencerwooo/mihoro") }
-      MenuRow { text: "mihomo docs"; onActivated: root.openUrl("https://wiki.metacubex.one") }
+      MenuRow { text: "Mihoro"; onActivated: root.openUrl("https://github.com/spencerwooo/mihoro") }
+      MenuRow { text: "Mihoro docs"; onActivated: root.openUrl(Model.INSTALL_DOCS_URL) }
 
-      // Links above, the thing that changes this machine below.
       Item {
         width: menu.width - menu.leftPadding - menu.rightPadding
         implicitHeight: Style.space(7)

@@ -31,8 +31,9 @@ Panel {
   // state. A panel this shallow does not need per-section cursors: the order
   // here is the order on screen.
   readonly property var targets: {
-    if (!mihoro.probe.mihoroInstalled) return ["setup"]
     if (root.panelPage === 2) return ["update", "edit"]
+    if (root.panelPage === 3) return ["install"]
+    if (!mihoro.probe.mihoroInstalled) return ["setup"]
     if (!mihoro.initialized) return ["setup"]
     var list = ["power"]
     if (mihoro.canSwitchMode) list.push("mode")
@@ -81,8 +82,9 @@ Panel {
     else if (target === "subscription") root.openSubscriptionPage()
     else if (target === "edit") subscription.beginEdit()
     else if (target === "update") mihoro.updateSubscription()
+    else if (target === "install") mihoro.installMihoro()
     else if (target === "setup") {
-      if (!mihoro.probe.mihoroInstalled) Quickshell.execDetached(["xdg-open", Model.INSTALL_DOCS_URL])
+      if (!mihoro.probe.mihoroInstalled) root.openInstallPage()
       else {
         root.openSubscriptionPage()
         subscription.beginEdit()
@@ -112,6 +114,22 @@ Panel {
 
   function leaveSubscriptionPage() {
     subscription.cancelEdit()
+    panelPage = 1
+    cursorActive = false
+    cursorIndex = 0
+    if (panelFlick) panelFlick.contentY = 0
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function openInstallPage() {
+    panelPage = 3
+    cursorActive = false
+    cursorIndex = 0
+    if (panelFlick) panelFlick.contentY = 0
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function leaveInstallPage() {
     panelPage = 1
     cursorActive = false
     cursorIndex = 0
@@ -236,6 +254,7 @@ Panel {
       onActivateRequested: if (root.cursorActive) root.activateCursor()
       onCloseRequested: {
         if (root.panelPage === 2) root.leaveSubscriptionPage()
+        else if (root.panelPage === 3) root.leaveInstallPage()
         else root.close()
       }
       onTabRequested: function(direction) { root.switchPanel(direction) }
@@ -246,6 +265,7 @@ Panel {
         else if (root.panelPage === 1 && key === "t") mihoro.toggleService()
         else if (root.panelPage === 1 && key === "r") mihoro.refresh()
         else if (root.panelPage === 1 && key === "s") root.openSubscriptionPage()
+        else if (root.panelPage === 1 && key === "i") root.openInstallPage()
         else if (root.panelPage === 1 && key === "m") root.cycleMode(1)
         else if (root.panelPage === 1 && key === "1") root.requestMode("rule")
         else if (root.panelPage === 1 && key === "2") root.requestMode("global")
@@ -305,15 +325,14 @@ Panel {
               anchors.verticalCenter: parent.verticalCenter
               spacing: Style.space(6)
 
-              ServiceSwitch {
+              ToggleSwitch {
                 id: powerSwitch
                 anchors.verticalCenter: parent.verticalCenter
                 visible: mihoro.initialized
                 checked: mihoro.active
                 busy: mihoro.actionRunning
+                cursorRing: false
                 foreground: root.foreground
-                onColor: systemTheme.blue
-                knobOnColor: Color.background
                 onHovered: function(on) {
                   if (!on) return
                   root.cursorActive = true
@@ -323,7 +342,7 @@ Panel {
 
                 PanelToolTip {
                   visible: powerSwitch.containsMouse
-                  text: mihoro.active ? "Stop mihomo" : "Start mihomo"
+                  text: "Current status: " + mihoro.connection.label
                   fontFamily: root.fontFamily
                 }
               }
@@ -333,25 +352,52 @@ Panel {
                 textColor: root.foreground
                 panelFontFamily: root.fontFamily
                 dashboardUrl: root.dashboardUrl
+                canOpenSubscription: mihoro.probe.mihoroInstalled
                 canRestart: mihoro.initialized && mihoro.probe.unitLoaded
                 canCopyProxy: mihoro.probe.mihoroInstalled && !mihoro.copyingProxyExport
                 onRestartRequested: mihoro.restartService()
                 onCopyProxyRequested: mihoro.copyProxyExport()
+                onInstallRequested: root.openInstallPage()
+                onSubscriptionRequested: root.openSubscriptionPage()
               }
             }
           }
 
           // One line for whatever the panel most needs to say: what it is
           // doing, what went wrong, or why the proxy is not connected.
-          Text {
+          Item {
             visible: root.panelPage === 1 && text !== ""
             width: parent.width
-            text: mihoro.actionStatus !== "" ? mihoro.actionStatus
-              : (mihoro.lastError !== "" ? mihoro.lastError : mihoro.connection.detail)
-            color: mihoro.lastError !== "" && mihoro.actionStatus === "" ? root.urgent : root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            wrapMode: Text.WordWrap
+            implicitHeight: Math.max(noticeText.implicitHeight, noticeClose.visible ? noticeClose.implicitHeight : 0)
+            property alias text: noticeText.text
+
+            Text {
+              id: noticeText
+              anchors.left: parent.left
+              anchors.right: noticeClose.visible ? noticeClose.left : parent.right
+              anchors.rightMargin: noticeClose.visible ? Style.space(6) : 0
+              text: mihoro.actionStatus !== "" ? mihoro.actionStatus
+                : (mihoro.lastWarning !== "" ? mihoro.lastWarning
+                  : (mihoro.lastError !== "" ? mihoro.lastError : mihoro.connection.detail))
+              color: mihoro.actionStatus === "" && mihoro.lastWarning !== ""
+                ? systemTheme.yellow
+                : (mihoro.lastError !== "" && mihoro.actionStatus === "" ? root.urgent : root.dim)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+
+            Button {
+              id: noticeClose
+              visible: mihoro.lastWarning !== "" && mihoro.actionStatus === ""
+              anchors.right: parent.right
+              anchors.top: parent.top
+              text: "×"
+              foreground: systemTheme.yellow
+              bordered: false
+              fontSize: Style.font.body
+              onClicked: mihoro.clearNotice()
+            }
           }
 
           SetupCard {
@@ -362,6 +408,7 @@ Panel {
             stateKey: mihoro.probe.mihoroInstalled ? "not_initialized" : "cli_missing"
             busy: mihoro.busy
             hasCursor: root.cursorTarget === "setup"
+            onInstallRequested: root.openInstallPage()
             onAddUrlRequested: {
               root.openSubscriptionPage()
               subscription.beginEdit()
@@ -427,6 +474,18 @@ Panel {
             onUrlCommitted: function(url) { mihoro.setSubscriptionUrl(url) }
             onUpdateRequested: mihoro.updateSubscription()
             onEditingChanged: if (!editing) Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+          }
+
+          InstallSection {
+            visible: root.panelPage === 3
+            width: parent.width
+            service: mihoro
+            textColor: root.foreground
+            successColor: systemTheme.green
+            panelFontFamily: root.fontFamily
+            hasCursor: root.cursorTarget === "install"
+            onBackRequested: root.leaveInstallPage()
+            onInstallRequested: mihoro.installMihoro()
           }
         }
       }
