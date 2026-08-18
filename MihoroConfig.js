@@ -1,9 +1,9 @@
 .pragma library
 
 // `~/.config/mihoro.toml` belongs to mihoro, not to this panel. The panel reads
-// five things out of it — the subscription URL, the proxy mode, where mihomo's
-// config tree lives, and how to reach mihomo's own API — and writes exactly two
-// back: `remote_config_url` and `mihomo_config.mode`.
+// a handful of things out of it — the subscription URL, the proxy mode, where
+// mihomo's binary and config tree live, and how to reach mihomo's own API — and
+// writes exactly two back: `remote_config_url` and `mihomo_config.mode`.
 //
 // Writes are line-level replacements rather than a parse-and-reserialize round
 // trip, because everything else in that file is the user's: key order, blank
@@ -258,10 +258,23 @@ function configPath(home) {
   return String(home || "") + "/.config/mihoro.toml"
 }
 
+// mihoro writes `~`-prefixed paths and people hand-edit them the same way, but
+// nothing the panel hands to a process expands `~` for it.
+function expandHome(path, home) {
+  var text = String(path === undefined || path === null ? "" : path).trim()
+  if (text.charAt(0) !== "~") return text
+  if (text.length === 1 || text.charAt(1) === "/") return String(home || "") + text.substring(1)
+  return text
+}
+
 function mihomoConfigPath(configRoot, home) {
-  var root = String(configRoot || "~/.config/mihomo")
-  if (root.charAt(0) === "~") root = String(home || "") + root.substring(1)
-  return root + "/config.yaml"
+  return expandHome(configRoot || "~/.config/mihomo", home) + "/config.yaml"
+}
+
+// Where the user says mihomo is. Empty means "no opinion" — the probe then
+// falls back to whatever is on PATH.
+function mihomoBinaryPath(binaryPath, home) {
+  return expandHome(binaryPath, home)
 }
 
 function readCommand(path) {

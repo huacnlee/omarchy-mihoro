@@ -1,4 +1,8 @@
 const assert = require("assert")
+const fs = require("fs")
+const os = require("os")
+const path = require("path")
+const { execFileSync } = require("child_process")
 const { load } = require("./load")
 
 const model = load("Model.js")
@@ -20,13 +24,22 @@ for (const forbidden of ["uninstall", "upgrade", "install.sh", "curl -fsSL"])
   assert.ok(!JSON.stringify(model.PROBE_SCRIPT).includes(forbidden),
     "the probe never runs " + forbidden)
 
-const probeCmd = model.probeCommand("/home/ada/.config/mihomo/config.yaml")
+const probeCmd = model.probeCommand("/home/ada/.config/mihomo/config.yaml", "/opt/mihomo/bin/mihomo")
 assert.strictEqual(probeCmd[0], "bash")
 assert.strictEqual(probeCmd[1], "-c")
 assert.strictEqual(probeCmd[3], "omahoro-probe")
 assert.strictEqual(probeCmd[4], "/home/ada/.config/mihomo/config.yaml")
+// The configured binary path is an argument, never spliced into the script:
+// it comes out of a file the user edits by hand.
+assert.strictEqual(probeCmd[5], "/opt/mihomo/bin/mihomo")
+assert.ok(!probeCmd[2].includes("/opt/mihomo"))
+assert.ok(probeCmd[2].includes("command -v mihomo"), "PATH stays the fallback")
 assert.ok(probeCmd[2].includes("systemctl --user"), "the unit is a user service")
 assert.ok(!probeCmd[2].includes("sudo"))
+
+// A caller with no configured path still gets a well-formed argv.
+assert.deepStrictEqual(Array.from(model.probeCommand("/tmp/config.yaml")).slice(4),
+  ["/tmp/config.yaml", ""])
 
 // ---------------------------------------------------------- probe parsing
 
@@ -47,6 +60,7 @@ now=1755432903
 const probe = model.parseProbe(PROBE_OUTPUT)
 assert.strictEqual(probe.mihoroInstalled, true)
 assert.strictEqual(probe.mihomoInstalled, true)
+assert.strictEqual(probe.mihomoPath, "/home/ada/.local/bin/mihomo")
 assert.strictEqual(probe.unitLoaded, true)
 assert.strictEqual(probe.activeState, "active")
 assert.strictEqual(probe.subState, "running")
@@ -61,6 +75,8 @@ assert.strictEqual(probe.now, 1755432903)
 // rather than as an error.
 const bare = model.parseProbe("mihoro_bin=\nmihomo_bin=\nLoadState=not-found\nActiveState=inactive\nconfig_present=0\n")
 assert.strictEqual(bare.mihoroInstalled, false)
+assert.strictEqual(bare.mihomoInstalled, false)
+assert.strictEqual(bare.mihomoPath, "")
 assert.strictEqual(bare.unitLoaded, false)
 assert.strictEqual(bare.activeState, "inactive")
 assert.strictEqual(bare.configPresent, false)
@@ -69,6 +85,49 @@ assert.strictEqual(model.parseProbe("").activeState, "unknown")
 // The systemd timestamp contains colons and spaces; splitting on the first `=`
 // must keep the whole value intact for the lines that need it.
 assert.strictEqual(model.parseProbe("ActiveEnterTimestamp=Sun 2026-08-17 19:15:03 CST\n").activeState, "unknown")
+
+// ------------------------------------------- binary resolution, for real
+//
+// Which mihomo the panel reports is decided by shell, not by JS, so the rule is
+// exercised by running the probe the way the panel runs it. The other lines of
+// the script need systemd and GNU coreutils; only `mihomo_bin` is asserted.
+
+// Spawned by absolute path: the cases below hand the probe a PATH with no
+// mihomo on it, and that PATH is what would resolve `bash` itself.
+const BASH = execFileSync("/bin/sh", ["-c", "command -v bash"], { encoding: "utf8" }).trim()
+
+function probeBinary(configuredPath, pathDir) {
+  const out = execFileSync(BASH, model.probeCommand("/nonexistent/config.yaml", configuredPath).slice(1), {
+    encoding: "utf8",
+    // The stripped PATH also hides `date` and `stat`; their complaints are not
+    // what this is testing.
+    stdio: ["ignore", "pipe", "ignore"],
+    env: Object.assign({}, process.env, { PATH: pathDir === undefined ? "" : pathDir })
+  })
+  return model.parseProbe(out).mihomoPath
+}
+
+const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "omahoro-probe-"))
+const elsewhere = path.join(sandbox, "opt")
+const onPath = path.join(sandbox, "bin")
+fs.mkdirSync(elsewhere)
+fs.mkdirSync(onPath)
+for (const dir of [elsewhere, onPath]) {
+  fs.writeFileSync(path.join(dir, "mihomo"), "#!/bin/sh\n", { mode: 0o755 })
+}
+
+// A mihomo installed outside PATH is found because mihoro.toml says where it is.
+assert.strictEqual(probeBinary(path.join(elsewhere, "mihomo")), path.join(elsewhere, "mihomo"))
+// Nothing configured, or configured to somewhere stale: PATH decides.
+assert.strictEqual(probeBinary("", onPath), path.join(onPath, "mihomo"))
+assert.strictEqual(probeBinary(path.join(sandbox, "gone", "mihomo"), onPath), path.join(onPath, "mihomo"))
+// A path that exists but is not executable is not a usable binary.
+const dud = path.join(sandbox, "dud")
+fs.writeFileSync(dud, "", { mode: 0o644 })
+assert.strictEqual(probeBinary(dud, onPath), path.join(onPath, "mihomo"))
+// Nowhere at all reads as "not installed" rather than as an error.
+assert.strictEqual(probeBinary(""), "")
+fs.rmSync(sandbox, { recursive: true, force: true })
 
 // ------------------------------------------------------- connection state
 

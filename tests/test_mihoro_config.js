@@ -29,6 +29,7 @@ external_ui = "ui"
 const parsed = config.parse(SAMPLE)
 assert.strictEqual(parsed.remoteConfigUrl, "https://example.com/sub?token=abcdefghijkl")
 assert.strictEqual(parsed.mihomoConfigRoot, "~/.config/mihomo")
+assert.strictEqual(parsed.mihomoBinaryPath, "~/.local/bin/mihomo")
 assert.strictEqual(parsed.mode, "rule")
 assert.strictEqual(parsed.externalController, "0.0.0.0:9090")
 assert.strictEqual(parsed.externalUi, "ui")
@@ -127,6 +128,19 @@ assert.strictEqual(
 assert.strictEqual(
   config.mihomoConfigPath("/opt/mihomo", "/home/ada"),
   "/opt/mihomo/config.yaml")
+
+// Nothing downstream of here expands `~` — the probe gets a path it can stat.
+assert.strictEqual(config.mihomoBinaryPath("~/.local/bin/mihomo", "/home/ada"),
+  "/home/ada/.local/bin/mihomo")
+assert.strictEqual(config.mihomoBinaryPath("/opt/mihomo/bin/mihomo", "/home/ada"),
+  "/opt/mihomo/bin/mihomo")
+assert.strictEqual(config.mihomoBinaryPath("  ~/bin/mihomo  ", "/home/ada"), "/home/ada/bin/mihomo")
+assert.strictEqual(config.mihomoBinaryPath("~", "/home/ada"), "/home/ada")
+// `~someone/bin` is another user's home, which is not this panel's to guess at.
+assert.strictEqual(config.mihomoBinaryPath("~ada/bin/mihomo", "/home/ada"), "~ada/bin/mihomo")
+// An unset path means "look on PATH", and must not become the bare home dir.
+assert.strictEqual(config.mihomoBinaryPath("", "/home/ada"), "")
+assert.strictEqual(config.mihomoBinaryPath(undefined, "/home/ada"), "")
 
 // ---------------------------------------------------------------- commands
 

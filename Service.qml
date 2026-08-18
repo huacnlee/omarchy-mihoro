@@ -63,6 +63,7 @@ Item {
   readonly property string home: Quickshell.env("HOME") || ""
   readonly property string mihoroConfigPath: MihoroConfig.configPath(home)
   readonly property string mihomoConfigPath: MihoroConfig.mihomoConfigPath(config.mihomoConfigRoot, home)
+  readonly property string mihomoBinaryPath: MihoroConfig.mihomoBinaryPath(config.mihomoBinaryPath, home)
   readonly property string apiBase: ClashApi.baseUrl(config.externalController)
 
   // Not `state`: QQuickItem already owns that name for its own state machine.
@@ -97,7 +98,7 @@ Item {
 
   function refreshProbe() {
     if (probeProcess.running) return
-    probeProcess.command = Model.probeCommand(mihomoConfigPath)
+    probeProcess.command = Model.probeCommand(mihomoConfigPath, mihomoBinaryPath)
     probeProcess.running = true
   }
 

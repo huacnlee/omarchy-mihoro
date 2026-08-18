@@ -46,8 +46,15 @@ function restartCommand() { return ["mihoro", "restart"] }
 function proxyExportCommand() { return ["mihoro", "proxy", "export"] }
 
 // One probe per refresh instead of five processes. It answers: is the CLI on
-// PATH, what does systemd think of mihomo.service, when did it last come up,
-// and has the subscription ever been written to disk.
+// PATH, where is the mihomo binary, what does systemd think of mihomo.service,
+// when did it last come up, and has the subscription ever been written to disk.
+//
+// mihomo is looked for where mihoro.toml says it is (`$2`, already
+// home-expanded) before PATH is consulted: `mihoro init` installs it to
+// `~/.local/bin`, which is not on every shell's PATH, and a user who moved it
+// elsewhere recorded that move in `mihomo_binary_path`. PATH remains the
+// fallback so a distro-packaged mihomo in `/usr/bin` is still found when the
+// configured path is stale or absent.
 //
 // `date -d` converts systemd's human timestamp to an epoch here rather than in
 // QML, because "Sun 2026-08-17 19:15:03 CST" is not something Date.parse can be
@@ -55,7 +62,9 @@ function proxyExportCommand() { return ["mihoro", "proxy", "export"] }
 var PROBE_SCRIPT = [
   "unit=mihomo.service",
   "printf 'mihoro_bin=%s\\n' \"$(command -v mihoro 2>/dev/null || true)\"",
-  "printf 'mihomo_bin=%s\\n' \"$(command -v mihomo 2>/dev/null || true)\"",
+  "mihomo_bin=${2:-}",
+  "[ -n \"$mihomo_bin\" ] && [ -x \"$mihomo_bin\" ] || mihomo_bin=$(command -v mihomo 2>/dev/null || true)",
+  "printf 'mihomo_bin=%s\\n' \"$mihomo_bin\"",
   "systemctl --user show \"$unit\" -p LoadState -p ActiveState -p SubState -p UnitFileState -p MainPID -p ActiveEnterTimestamp 2>/dev/null || true",
   "started=$(systemctl --user show \"$unit\" -p ActiveEnterTimestamp --value 2>/dev/null || true)",
   "if [ -n \"$started\" ]; then printf 'active_enter_epoch=%s\\n' \"$(date -d \"$started\" +%s 2>/dev/null || echo 0)\"; fi",
@@ -63,14 +72,16 @@ var PROBE_SCRIPT = [
   "printf 'now=%s\\n' \"$(date +%s)\""
 ].join("\n")
 
-function probeCommand(mihomoConfigPath) {
-  return ["bash", "-c", PROBE_SCRIPT, "omahoro-probe", String(mihomoConfigPath || "")]
+function probeCommand(mihomoConfigPath, mihomoBinaryPath) {
+  return ["bash", "-c", PROBE_SCRIPT, "omahoro-probe",
+    String(mihomoConfigPath || ""), String(mihomoBinaryPath || "")]
 }
 
 function emptyProbe() {
   return {
     mihoroInstalled: false,
     mihomoInstalled: false,
+    mihomoPath: "",
     unitLoaded: false,
     activeState: "unknown",
     subState: "",
@@ -93,7 +104,7 @@ function parseProbe(text) {
     var key = line.substring(0, eq).trim()
     var value = line.substring(eq + 1).trim()
     if (key === "mihoro_bin") probe.mihoroInstalled = value !== ""
-    else if (key === "mihomo_bin") probe.mihomoInstalled = value !== ""
+    else if (key === "mihomo_bin") { probe.mihomoPath = value; probe.mihomoInstalled = value !== "" }
     else if (key === "LoadState") probe.unitLoaded = value === "loaded"
     else if (key === "ActiveState") probe.activeState = value || "unknown"
     else if (key === "SubState") probe.subState = value

@@ -47,6 +47,10 @@ Remove the Omarchy plugin:
 omarchy plugin remove mihoro.omarchy
 ```
 
+The panel looks for the mihomo binary where `mihomo_binary_path` in
+`~/.config/mihoro.toml` says it is, and falls back to your `PATH`. If you
+installed mihomo somewhere else, point that key at it.
+
 If mihomo does not start, inspect its recent logs:
 
 ```bash
