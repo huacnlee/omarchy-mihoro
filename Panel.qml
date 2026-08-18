@@ -15,6 +15,10 @@ Panel {
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
+
+  SystemTheme {
+    id: systemTheme
+  }
   readonly property color dim: Qt.darker(foreground, 1.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
@@ -307,8 +311,9 @@ Panel {
                 visible: mihoro.initialized
                 checked: mihoro.active
                 busy: mihoro.actionRunning
-                hasCursor: root.cursorTarget === "power"
                 foreground: root.foreground
+                onColor: systemTheme.blue
+                knobOnColor: Color.background
                 onHovered: function(on) {
                   if (!on) return
                   root.cursorActive = true

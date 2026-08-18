@@ -19,8 +19,8 @@ Item {
   signal restartRequested()
   signal copyProxyRequested()
 
-  implicitWidth: Style.space(28)
-  implicitHeight: Style.space(28)
+  implicitWidth: Style.space(24)
+  implicitHeight: Style.space(24)
 
   function openUrl(url) {
     Quickshell.execDetached(["xdg-open", url])
@@ -32,7 +32,7 @@ Item {
     anchors.fill: parent
     text: "⋮"
     foreground: root.textColor
-    bordered: false
+    bordered: true
     onClicked: menu.opened ? menu.close() : menu.open()
   }
 

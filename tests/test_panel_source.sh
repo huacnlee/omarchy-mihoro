@@ -94,6 +94,9 @@ grep -Fq 'iconSize: Style.space(12)' Panel.qml
 grep -Fq 'onCopyProxyRequested: mihoro.copyProxyExport()' Panel.qml
 grep -Fq 'text: "Copy proxy export"' components/PanelMenu.qml
 grep -Fq 'https://github.com/huacnlee/omarchy-mihoro' components/PanelMenu.qml
+sed -n '/id: menuButton/,/onClicked:/p' components/PanelMenu.qml | grep -Fq 'bordered: true'
+grep -Fq 'implicitWidth: Style.space(24)' components/PanelMenu.qml
+grep -Fq 'implicitHeight: Style.space(24)' components/PanelMenu.qml
 grep -Fq 'Model.proxyExportCommand()' Service.qml
 grep -Fq 'clipboardProcess.write(root._pendingClipboard)' Service.qml
 grep -Fq 'command: ["wl-copy"]' Service.qml
@@ -111,6 +114,9 @@ grep -Fq 'SettingsIcon {' components/ModeSection.qml
 grep -Fq 'PanelActionButton {' components/ModeSection.qml
 grep -Fq 'id: modeControlRow' components/ModeSection.qml
 grep -Fq 'width: modeControlRow.width - subscriptionButton.width - modeControlRow.spacing' components/ModeSection.qml
+grep -Fq 'delegate: Button {' components/ModeSection.qml
+grep -Fq 'selected: String(modelData.value) === root.mode' components/ModeSection.qml
+grep -Fq 'bordered: true' components/ModeSection.qml
 ! grep -Fq 'text: "⚙"' components/ModeSection.qml
 grep -Fq 'onBackRequested: root.leaveSubscriptionPage()' Panel.qml
 grep -Fq 'if (root.panelPage === 2) root.leaveSubscriptionPage()' Panel.qml
@@ -142,8 +148,17 @@ grep -Fq 'key === "u"' Panel.qml
 grep -Fq 'key === "e"' Panel.qml
 grep -Fq 'root.requestMode("global")' Panel.qml
 grep -Fq 'ServiceSwitch {' Panel.qml
+grep -Fq 'onColor: systemTheme.blue' Panel.qml
+grep -Fq 'knobOnColor: Color.background' Panel.qml
 grep -Fq 'property color onColor: Color.accent' components/ServiceSwitch.qml
+grep -Fq 'property color knobOnColor: Color.foreground' components/ServiceSwitch.qml
+! grep -Fq 'knobBorderColor' components/ServiceSwitch.qml
 grep -Fq 'property color offColor: Qt.darker(foreground, 1.6)' components/ServiceSwitch.qml
+grep -Fq 'readonly property int trackHeight: Style.space(24)' components/ServiceSwitch.qml
+grep -Fq 'implicitHeight: trackHeight' components/ServiceSwitch.qml
+! grep -Fq 'property bool hasCursor' components/ServiceSwitch.qml
+! grep -Fq 'visible: root.hasCursor' components/ServiceSwitch.qml
+grep -Fq 'color: root.checked ? root.knobOnColor : Qt.lighter(root.offColor, 1.7)' components/ServiceSwitch.qml
 ! grep -Eq '#[0-9a-fA-F]{6}' components/ServiceSwitch.qml
 
 # IPC is how the rest of Omarchy drives the panel.

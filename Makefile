@@ -2,6 +2,7 @@ QMLLINT := /usr/lib/qt6/bin/qmllint
 QML_FILES := Panel.qml Service.qml \
 	components/MihoroIcon.qml \
 	components/SettingsIcon.qml \
+	components/SystemTheme.qml \
 	components/ServiceSwitch.qml \
 	components/StatRow.qml \
 	components/ModeSection.qml \
@@ -17,6 +18,7 @@ test: test-js test-shell
 # The parsing, formatting, and command-building live in plain JS precisely so
 # they can be tested without a compositor. These run anywhere node does.
 test-js:
+	node tests/test_theme_colors.js
 	node tests/test_mihoro_config.js
 	node tests/test_clash_api.js
 	node tests/test_model.js

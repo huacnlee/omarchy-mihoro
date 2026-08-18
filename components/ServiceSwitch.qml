@@ -10,32 +10,23 @@ Item {
 
   property bool checked: false
   property bool busy: false
-  property bool hasCursor: false
   property color foreground: Color.foreground
   property color onColor: Color.accent
+  property color knobOnColor: Color.foreground
   property color offColor: Qt.darker(foreground, 1.6)
 
   signal toggled()
   signal hovered(bool isHovered)
 
   readonly property alias containsMouse: mouse.containsMouse
-  readonly property int trackHeight: Math.max(22, Math.round(Style.spacing.controlHeight * 0.55))
+  readonly property int trackHeight: Style.space(24)
   readonly property int trackWidth: Math.round(trackHeight * 1.9)
   readonly property int knobSize: Math.max(6, Math.round(trackHeight * 0.72))
   readonly property int knobInset: Math.max(1, Math.round((trackHeight - knobSize) / 2))
   readonly property int cursorPad: Style.space(6)
 
   implicitWidth: trackWidth + cursorPad * 2
-  implicitHeight: trackHeight + cursorPad * 2
-
-  Rectangle {
-    anchors.fill: parent
-    visible: root.hasCursor || mouse.containsMouse
-    color: "transparent"
-    radius: Style.cornerRadius
-    border.width: 1
-    border.color: root.checked ? root.onColor : root.offColor
-  }
+  implicitHeight: trackHeight
 
   Rectangle {
     id: track
@@ -55,7 +46,7 @@ Item {
       radius: Style.cornerRadius > 0 ? height / 2 : 0
       anchors.verticalCenter: parent.verticalCenter
       x: root.checked ? track.width - width - root.knobInset : root.knobInset
-      color: root.checked ? Color.background : Qt.lighter(root.offColor, 1.7)
+      color: root.checked ? root.knobOnColor : Qt.lighter(root.offColor, 1.7)
 
       Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
       Behavior on color { ColorAnimation { duration: 120 } }

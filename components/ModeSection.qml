@@ -77,57 +77,29 @@ Column {
       Repeater {
         model: root.options
 
-        delegate: Rectangle {
+        delegate: Button {
           id: chip
           required property var modelData
           required property int index
-          readonly property bool selected: String(modelData.value) === root.mode
-          readonly property bool hot: chipHover.hovered || root.cursorIndex === index
-
-          width: chipLabel.implicitWidth + Style.space(28)
-          height: chipLabel.implicitHeight + Style.space(18)
-          radius: Style.cornerRadius
-          color: selected
-            ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, hot ? 0.32 : 0.22)
-            : (hot
-              ? Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.12)
-              : Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.035))
-          border.width: selected ? 2 : 1
-          border.color: selected
-            ? (hot ? Qt.lighter(root.accentColor, 1.22) : root.accentColor)
-            : Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, hot ? 0.55 : 0.22)
-
-          Behavior on color { ColorAnimation { duration: 90 } }
-
-          Text {
-            id: chipLabel
-            anchors.centerIn: parent
-            text: String(chip.modelData.label)
-            color: chip.selected
-              ? (chip.hot ? Qt.lighter(root.accentColor, 1.22) : root.accentColor)
-              : root.textColor
-            font.family: root.panelFontFamily
-            font.pixelSize: Style.font.bodySmall
-            font.bold: chip.selected
-          }
-
-          HoverHandler {
-            id: chipHover
-            onHoveredChanged: root.chipHovered(chip.index, hovered)
-          }
-
-          MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: {
-              var value = String(chip.modelData.value)
-              if (value === "global") {
-                root.selectingGlobal = true
-                root.globalRequested()
-              } else {
-                root.selectingGlobal = false
-                root.modeRequested(value)
-              }
+          text: String(modelData.label)
+          selected: String(modelData.value) === root.mode
+          hasCursor: root.cursorIndex === index
+          bordered: true
+          foreground: root.textColor
+          accent: root.accentColor
+          fontFamily: root.panelFontFamily
+          fontSize: Style.font.bodySmall
+          horizontalPadding: Style.space(14)
+          verticalPadding: Style.space(9)
+          onHovered: function(isHovered) { root.chipHovered(chip.index, isHovered) }
+          onClicked: {
+            var value = String(chip.modelData.value)
+            if (value === "global") {
+              root.selectingGlobal = true
+              root.globalRequested()
+            } else {
+              root.selectingGlobal = false
+              root.modeRequested(value)
             }
           }
         }
