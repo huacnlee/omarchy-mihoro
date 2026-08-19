@@ -94,11 +94,15 @@ grep -Fq 'iconSize: Style.space(12)' Panel.qml
 grep -Fq 'onCopyProxyRequested: mihoro.copyProxyExport()' Panel.qml
 grep -Fq 'text: "Copy proxy export"' components/PanelMenu.qml
 grep -Fq 'https://github.com/huacnlee/omarchy-mihoro' components/PanelMenu.qml
-grep -Fq 'text: "Mihoro docs"' components/PanelMenu.qml
+grep -Fq 'text: "Mihoro docs..."' components/PanelMenu.qml
 ! grep -Fq 'text: "Install Guides"' components/PanelMenu.qml
 ! grep -Fq 'text: "Open install guide"' components/PanelMenu.qml
 grep -Fq 'Model.INSTALL_DOCS_URL' components/PanelMenu.qml
-grep -Fq 'text: "Mihoro"' components/PanelMenu.qml
+grep -Fq 'text: "Dashboard..."' components/PanelMenu.qml
+grep -Fq 'text: "GitHub..."' components/PanelMenu.qml
+grep -Fq 'text: "Mihoro..."; onActivated: root.openUrl(Model.PROJECT_URL)' components/PanelMenu.qml
+grep -Fq 'text: "Mihoro docs..."' components/PanelMenu.qml
+grep -Fq 'text: "Mihoro..."' components/PanelMenu.qml
 ! grep -Fq 'text: "mihoro"' components/PanelMenu.qml
 ! grep -Fq 'text: "Mihoro Docs"' components/PanelMenu.qml
 ! grep -Fq 'https://wiki.metacubex.one' components/PanelMenu.qml
@@ -115,18 +119,17 @@ grep -Fq 'implicitHeight: Style.space(24)' components/PanelMenu.qml
 grep -Fq 'Model.proxyExportCommand()' Service.qml
 grep -Fq 'clipboardProcess.write(root._pendingClipboard)' Service.qml
 
-# Missing Mihoro is installed through an Omarchy-launched terminal, rather
-# than silently executing the network installer inside the shell process.
+# Missing Mihoro is handled by opening its official installation guide; the
+# plugin does not download or execute upstream installation code.
 grep -Fq 'text: "Install Mihoro..."' components/SetupCard.qml
 grep -Fq 'text: "Add subscription URL..."' components/SetupCard.qml
 grep -Fq 'onInstallRequested: root.openInstallPage()' Panel.qml
-grep -Fq 'Model.installCommand(installScriptPath)' Service.qml
-grep -Fq 'scripts/install-mihoro' Service.qml
-grep -Fq -- '--from-ui' scripts/install-mihoro
-grep -Fq 'property string lastWarning' Service.qml
-grep -Fq 'Model.installExitNotice' Service.qml
+grep -Fq 'function openInstallationGuide()' Service.qml
+grep -Fq 'Model.installationGuideCommand()' Service.qml
+! grep -Fq 'scripts/install-mihoro' Service.qml
+[[ ! -e scripts/install-mihoro ]]
 grep -Fq 'onClicked: mihoro.clearNotice()' Panel.qml
-grep -Fq 'systemTheme.yellow' Panel.qml
+grep -Fq 'foreground: root.urgent' Panel.qml
 grep -Fq 'command: ["wl-copy"]' Service.qml
 
 # The popup is two internal pages, and every fresh open returns to the main
@@ -144,10 +147,9 @@ grep -Fq 'successColor: systemTheme.green' Panel.qml
 grep -Fq 'root.service.probe.mihoroInstalled ? root.successColor' components/InstallSection.qml
 grep -Fq 'root.service.probe.mihoroInstalled ? Qt.rgba(root.successColor.r' components/InstallSection.qml
 grep -Fq 'text: root.service.probe.mihoroVersion' components/InstallSection.qml
-grep -Fq 'text: "Install Now"' components/InstallSection.qml
-grep -Fq 'iconText: "+"' components/InstallSection.qml
+grep -Fq 'text: "Open Installation Guide..."' components/InstallSection.qml
 ! grep -Fq 'text: "Install Mihoro..."' components/InstallSection.qml
-grep -Fq 'onInstallRequested: mihoro.installMihoro()' Panel.qml
+grep -Fq 'onGuideRequested: mihoro.openInstallationGuide()' Panel.qml
 grep -Fq 'onSubscriptionRequested: root.openSubscriptionPage()' Panel.qml
 grep -Fq 'SettingsIcon {' components/ModeSection.qml
 grep -Fq 'tooltipText: "Manage subscription..."' components/ModeSection.qml

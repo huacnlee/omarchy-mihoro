@@ -40,8 +40,11 @@ for file in Model.js Service.qml Panel.qml install.sh components/*.qml; do
     || { echo "$file escalates privileges" >&2; exit 1; }
 done
 
-# install.sh links a checkout into place; it never fetches or runs an installer.
-! grep -Eq 'curl .*\| *(sh|bash)' install.sh
+# No shipped plugin source executes downloaded shell code.
+for file in Model.js Service.qml Panel.qml install.sh components/*.qml scripts/*; do
+  [[ ! -e "$file" ]] || ! grep -Eq 'curl .*\| *(sh|bash)' "$file" \
+    || { echo "$file pipes downloaded content to a shell" >&2; exit 1; }
+done
 grep -Fq 'omarchy plugin validate' install.sh
 grep -Fq 'plugin-backups' install.sh
 [[ -x install.sh ]]

@@ -15,10 +15,10 @@ and manage your subscription.
 
 ## Getting Started
 
-Open the panel and choose **Install Mihoro**. The panel shows whether the CLI
-is installed, reports its detected version, and opens Mihoro's official
-installer in an Omarchy terminal. The same installer remains available from
-the panel menu after installation.
+Open the panel and choose **Install Mihoro...**. The panel shows whether the CLI
+is installed, reports its detected version, and links to Mihoro's official
+installation guide. The guide remains available from the panel menu after
+installation.
 
 You can also follow the [upstream installation instructions](https://github.com/spencerwooo/mihoro#installation)
 from the panel menu or install it manually.

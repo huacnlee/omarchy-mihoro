@@ -12,7 +12,7 @@ Column {
   property bool hasCursor: false
 
   signal backRequested()
-  signal installRequested()
+  signal guideRequested()
 
   spacing: Style.space(12)
 
@@ -94,7 +94,7 @@ Column {
 
   Text {
     width: parent.width
-    text: "The official installer opens in an Omarchy terminal so progress and errors remain visible."
+    text: "Mihoro is installed separately. Open its official guide, then return here after installation."
     color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.58)
     font.family: root.panelFontFamily
     font.pixelSize: Style.font.bodySmall
@@ -103,13 +103,13 @@ Column {
 
   Button {
     width: parent.width
-    text: "Install Now"
-    iconText: "+"
+    text: "Open Installation Guide..."
+    iconText: "↗"
     foreground: root.textColor
     bordered: true
     enabled: !root.service.busy
     hasCursor: root.hasCursor
     fontSize: Style.font.bodySmall
-    onClicked: root.installRequested()
+    onClicked: root.guideRequested()
   }
 }

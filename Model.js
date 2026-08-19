@@ -31,8 +31,8 @@ function modeSelectionAction(next, current) {
 // ------------------------------------------------------------------ the CLI
 //
 // mihoro owns the mihomo binary, the systemd unit, and the subscription
-// download. Installation stays interactive by opening the official installer
-// in an Omarchy-managed terminal, matching Omarchy's package/setup UI pattern.
+// download. The plugin opens the upstream installation guide and leaves
+// installation entirely to the user.
 
 var INSTALL_DOCS_URL = "https://github.com/spencerwooo/mihoro#installation"
 var PROJECT_URL = "https://github.com/spencerwooo/mihoro"
@@ -44,21 +44,8 @@ function startCommand() { return ["mihoro", "start"] }
 function stopCommand() { return ["mihoro", "stop"] }
 function restartCommand() { return ["mihoro", "restart"] }
 function proxyExportCommand() { return ["mihoro", "proxy", "export"] }
-function installCommand(scriptPath) {
-  return ["omarchy", "launch", "terminal", String(scriptPath || ""), "--from-ui"]
-}
-
-function installExitNotice(exitCode, stderr) {
-  if (Number(exitCode) === 0) return { kind: "", message: "" }
-  var message = String(stderr || "").trim()
-  var lines = message.split("\n").filter(function(line) { return line.trim() !== "" })
-  var knownDiagnostic = lines.length > 0 && lines.every(function(line) {
-    var text = line.trim()
-    return text.indexOf("warn: wayland.c:") === 0
-      || text.indexOf("the xdg-toplevel-icon protocol") === 0
-      || (text.indexOf("warn: terminal.c:") === 0 && text.indexOf("Hangup") !== -1)
-  })
-  return { kind: knownDiagnostic ? "warning" : "error", message: message }
+function installationGuideCommand() {
+  return ["omarchy", "launch", "browser", INSTALL_DOCS_URL]
 }
 
 // One probe per refresh instead of five processes. It answers: is the CLI on

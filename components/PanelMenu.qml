@@ -61,7 +61,7 @@ Item {
       spacing: Style.space(2)
 
       MenuRow {
-        text: "Dashboard"
+        text: "Dashboard..."
         enabled: root.dashboardUrl !== ""
         onActivated: root.openUrl(root.dashboardUrl)
       }
@@ -102,11 +102,11 @@ Item {
       }
 
       MenuRow {
-        text: "GitHub"
+        text: "GitHub..."
         onActivated: root.openUrl("https://github.com/huacnlee/omarchy-mihoro")
       }
-      MenuRow { text: "Mihoro"; onActivated: root.openUrl("https://github.com/spencerwooo/mihoro") }
-      MenuRow { text: "Mihoro docs"; onActivated: root.openUrl(Model.INSTALL_DOCS_URL) }
+      MenuRow { text: "Mihoro..."; onActivated: root.openUrl(Model.PROJECT_URL) }
+      MenuRow { text: "Mihoro docs..."; onActivated: root.openUrl(Model.INSTALL_DOCS_URL) }
 
       Item {
         width: menu.width - menu.leftPadding - menu.rightPadding

@@ -82,7 +82,7 @@ Panel {
     else if (target === "subscription") root.openSubscriptionPage()
     else if (target === "edit") subscription.beginEdit()
     else if (target === "update") mihoro.updateSubscription()
-    else if (target === "install") mihoro.installMihoro()
+    else if (target === "install") mihoro.openInstallationGuide()
     else if (target === "setup") {
       if (!mihoro.probe.mihoroInstalled) root.openInstallPage()
       else {
@@ -377,11 +377,8 @@ Panel {
               anchors.right: noticeClose.visible ? noticeClose.left : parent.right
               anchors.rightMargin: noticeClose.visible ? Style.space(6) : 0
               text: mihoro.actionStatus !== "" ? mihoro.actionStatus
-                : (mihoro.lastWarning !== "" ? mihoro.lastWarning
-                  : (mihoro.lastError !== "" ? mihoro.lastError : mihoro.connection.detail))
-              color: mihoro.actionStatus === "" && mihoro.lastWarning !== ""
-                ? systemTheme.yellow
-                : (mihoro.lastError !== "" && mihoro.actionStatus === "" ? root.urgent : root.dim)
+                : (mihoro.lastError !== "" ? mihoro.lastError : mihoro.connection.detail)
+              color: mihoro.lastError !== "" && mihoro.actionStatus === "" ? root.urgent : root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               wrapMode: Text.WordWrap
@@ -389,11 +386,11 @@ Panel {
 
             Button {
               id: noticeClose
-              visible: mihoro.lastWarning !== "" && mihoro.actionStatus === ""
+              visible: mihoro.lastError !== "" && mihoro.actionStatus === ""
               anchors.right: parent.right
               anchors.top: parent.top
               text: "×"
-              foreground: systemTheme.yellow
+              foreground: root.urgent
               bordered: false
               fontSize: Style.font.body
               onClicked: mihoro.clearNotice()
@@ -485,7 +482,7 @@ Panel {
             panelFontFamily: root.fontFamily
             hasCursor: root.cursorTarget === "install"
             onBackRequested: root.leaveInstallPage()
-            onInstallRequested: mihoro.installMihoro()
+            onGuideRequested: mihoro.openInstallationGuide()
           }
         }
       }

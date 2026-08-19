@@ -19,18 +19,9 @@ assert.deepStrictEqual(Array.from(model.startCommand()), ["mihoro", "start"])
 assert.deepStrictEqual(Array.from(model.stopCommand()), ["mihoro", "stop"])
 assert.deepStrictEqual(Array.from(model.restartCommand()), ["mihoro", "restart"])
 assert.deepStrictEqual(Array.from(model.proxyExportCommand()), ["mihoro", "proxy", "export"])
-assert.deepStrictEqual(Array.from(model.installCommand("/plugins/mihoro/scripts/install-mihoro")), [
-  "omarchy", "launch", "terminal", "/plugins/mihoro/scripts/install-mihoro", "--from-ui"
+assert.deepStrictEqual(Array.from(model.installationGuideCommand()), [
+  "omarchy", "launch", "browser", "https://github.com/spencerwooo/mihoro#installation"
 ])
-
-const hangupNotice = model.installExitNotice(1, `warn: wayland.c:1854: compositor does not implement
-the xdg-toplevel-icon protocol
-warn: terminal.c:2034: slave exited with signal 1 (Hangup)`)
-assert.strictEqual(hangupNotice.kind, "warning")
-assert.ok(hangupNotice.message.includes("Hangup"))
-assert.strictEqual(model.installExitNotice(1, "curl: could not resolve host").kind, "error")
-assert.strictEqual(model.installExitNotice(1, "warn: wayland.c:1854\ncurl failed").kind, "error")
-assert.strictEqual(model.installExitNotice(0, "").kind, "")
 
 for (const forbidden of ["uninstall", "upgrade", "install.sh", "curl -fsSL"])
   assert.ok(!JSON.stringify(model.PROBE_SCRIPT).includes(forbidden),
