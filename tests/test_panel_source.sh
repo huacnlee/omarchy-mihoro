@@ -56,6 +56,31 @@ grep -Fq 'component Speed: Item {' components/ConnectionSection.qml
 grep -Fq 'color: root.textColor' components/ConnectionSection.qml
 ! grep -Fq 'color: Qt.rgba(metricColor.r' components/ConnectionSection.qml
 ! grep -Eq '#[0-9a-fA-F]{6}' components/ConnectionSection.qml
+# Both directions share one full-width chart, drawn from the very stream
+# readings that set the numbers over it, so the two cannot disagree.
+grep -Fq 'history: root.service.downHistory' components/ConnectionSection.qml
+grep -Fq 'history: root.service.upHistory' components/ConnectionSection.qml
+grep -Fq 'Model.pushHistory(root.upHistory' Service.qml
+grep -Fq 'Model.pushHistory(root.downHistory' Service.qml
+[[ "$(grep -c 'Sparkline {' components/ConnectionSection.qml)" -eq 2 ]]
+grep -Fq 'width: parent.width' components/ConnectionSection.qml
+# One scale for both, or the eye reads a trickle as tall as a torrent.
+grep -Fq 'scalePeak: trafficPanel.seriesPeak' components/ConnectionSection.qml
+grep -Fq 'Model.peakOf(root.service.downHistory)' components/ConnectionSection.qml
+# The chart is background: both curves are declared before the readouts.
+[[ "$(grep -n 'Sparkline {' components/ConnectionSection.qml | tail -1 | cut -d: -f1)" -lt \
+   "$(grep -n 'id: trafficRow' components/ConnectionSection.qml | cut -d: -f1)" ]]
+# The history outlives a closed panel, but the seconds nothing was sampled are
+# charged to it, so reopening continues the curve without closing the gap.
+grep -Fq 'Model.padHistory(root.upHistory' Service.qml
+grep -Fq 'Model.padHistory(root.downHistory' Service.qml
+grep -Fq 'root.trafficIdleSince = Date.now() / 1000' Service.qml
+! grep -Fq 'root.upHistory = []' Service.qml
+! grep -Fq 'root.downHistory = []' Service.qml
+# Every point was measured, not interpolated: straight segments only.
+! grep -Eq 'bezierCurveTo|quadraticCurveTo' components/Sparkline.qml
+! grep -Eq '#[0-9a-fA-F]{6}' components/Sparkline.qml
+
 grep -Fq 'label: "TUN"' components/ConnectionSection.qml
 grep -Fq 'root.service.liveConfigs.tunEnabled' components/ConnectionSection.qml
 

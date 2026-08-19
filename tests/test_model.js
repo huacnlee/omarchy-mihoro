@@ -239,16 +239,149 @@ assert.strictEqual(model.displayUrl("https://example.com/aVeryLongTokenHere", tr
 assert.ok(!model.displayUrl("https://example.com/aVeryLongTokenHere", false)
   .includes("aVeryLongTokenHere"))
 
+// ------------------------------------------------------------------ history
+
+// A `var` property's bindings only re-run on assignment, so the array the
+// panel already holds must not be the one that grew.
+const seed = [1, 2, 3]
+const grown = model.pushHistory(seed, 4, 60)
+assert.strictEqual(seed.length, 3, "the caller's array must not be mutated")
+assert.strictEqual(grown.length, 4)
+assert.strictEqual(grown[3], 4)
+
+// The window slides once it is full; the oldest sample falls off the front.
+let window = []
+for (let i = 1; i <= 8; i++) window = model.pushHistory(window, i, 5)
+assert.strictEqual(window.length, 5)
+assert.strictEqual(window[0], 4)
+assert.strictEqual(window[4], 8)
+
+assert.deepStrictEqual(Array.from(model.pushHistory(null, 7, 3)), [7])
+assert.deepStrictEqual(Array.from(model.pushHistory([], "nope", 3)), [0])
+assert.deepStrictEqual(Array.from(model.pushHistory([], -5, 3)), [0])
+assert.strictEqual(model.pushHistory([1, 2, 3], 4, 0).length, 1, "a zero cap still keeps the newest")
+
+// ---- gaps
+//
+// The history outlives a closed panel, so the seconds nothing was sampled have
+// to occupy the width they really lasted. Otherwise a sample from ten minutes
+// ago ends up drawn next to one from now.
+let before = null
+for (const n of [10, 20, 30]) before = model.pushHistory(before, n, 60)
+const afterGap = model.padHistory(before, 4, 60)
+assert.strictEqual(afterGap.length, 7)
+assert.deepStrictEqual(Array.from(afterGap).slice(3), [0, 0, 0, 0])
+assert.deepStrictEqual(Array.from(afterGap).slice(0, 3), [10, 20, 30],
+  "the samples either side of a gap must survive it")
+
+// A fractional gap counts whole slots only, and a gap of none changes nothing.
+assert.strictEqual(model.padHistory(before, 2.9, 60).length, 5)
+assert.strictEqual(model.padHistory(before, 0, 60), before)
+assert.strictEqual(model.padHistory(before, -3, 60), before)
+assert.strictEqual(model.padHistory(before, NaN, 60), before)
+
+// A gap longer than the window leaves nothing of the old series: the chart
+// comes back flat rather than showing a minute of stale traffic.
+const stale = model.padHistory(before, 5000, 60)
+assert.strictEqual(stale.length, 60)
+assert.ok(Array.from(stale).every(function (n) { return n === 0 }))
+
+// ---- sparkline geometry
+//
+// Newest on the right edge, growing leftward, so a series that has just
+// started does not claim the full width.
+const young = model.sparkline([10, 20], 11)
+assert.strictEqual(young.points.length, 2)
+assert.strictEqual(young.points[1].x, 1, "the newest sample is pinned to the right edge")
+assert.strictEqual(young.points[0].x, 0.9, "one sample back is one slot in from it")
+
+const full = model.sparkline([1, 2, 3], 3)
+assert.strictEqual(full.points[0].x, 0, "a full window starts at the left edge")
+assert.strictEqual(full.points[2].x, 1)
+
+// Zero-based scale: twice the throughput draws twice as tall. A min..max scale
+// would put the quiet second on the floor and the next one at the ceiling.
+const jitter = model.sparkline([70, 71], 60)
+assert.strictEqual(jitter.peak, 71)
+assert.ok(jitter.points[0].y > 0.98, "an idle line's own jitter must not fill the box")
+const doubled = model.sparkline([25, 50], 60)
+assert.strictEqual(doubled.points[0].y, 0.5)
+assert.strictEqual(doubled.points[1].y, 1)
+
+// ---- shared scale
+//
+// Two curves side by side in the same units have to be comparable by height,
+// so the caller passes one peak for both.
+assert.strictEqual(model.peakOf([3, 91, 12]), 91)
+assert.strictEqual(model.peakOf(null), 0)
+assert.strictEqual(model.peakOf([]), 0)
+assert.strictEqual(model.peakOf(["nope", 4]), 4)
+
+const download = model.sparkline([500000, 1000000], 60, 1000000)
+const upload = model.sparkline([1000, 2000], 60, 1000000)
+assert.strictEqual(download.points[1].y, 1)
+assert.ok(upload.points[1].y < 0.01, "a trickle beside a torrent must draw as a low line")
+// Left to itself the same trickle would fill the box — that is the bug the
+// shared peak exists to prevent.
+assert.strictEqual(model.sparkline([1000, 2000], 60).points[1].y, 1)
+
+// A shared peak can lag a series that just spiked past it; the curve clamps
+// rather than drawing outside its own box.
+const spike = model.sparkline([100, 5000], 60, 1000)
+assert.strictEqual(spike.points[1].y, 1)
+// A non-positive or unusable override falls back to the window's own peak.
+assert.strictEqual(model.sparkline([25, 50], 60, 0).points[0].y, 0.5)
+assert.strictEqual(model.sparkline([25, 50], 60, "nope").points[0].y, 0.5)
+
+// An all-zero window has no peak to divide by and must stay flat, not NaN.
+const idle = model.sparkline([0, 0, 0], 60)
+assert.strictEqual(idle.peak, 0)
+assert.ok(idle.points.every(function (point) { return point.y === 0 }))
+
+// ---- the baseline lead
+//
+// The un-sampled part of the window is returned separately so the chart can
+// draw a flat line across it — an empty chart is a baseline, not a blank box —
+// while the filled area still marks only what was measured.
+const empty = model.sparkline([], 60)
+assert.strictEqual(empty.points.length, 0)
+assert.strictEqual(empty.lead.length, 2, "an empty chart still draws a line")
+assert.strictEqual(empty.lead[0].x, 0)
+assert.strictEqual(empty.lead[1].x, 1, "the baseline spans the full width")
+assert.ok(empty.lead.every(function (point) { return point.y === 0 }))
+
+// Partly filled: the lead runs from the left edge to where the samples start.
+const partial = model.sparkline([5, 9], 11)
+assert.strictEqual(partial.lead.length, 2)
+assert.strictEqual(partial.lead[0].x, 0)
+assert.strictEqual(partial.lead[1].x, partial.points[0].x)
+
+// Full window: nothing left to lead in with.
+assert.strictEqual(model.sparkline([1, 2, 3], 3).lead.length, 0)
+
+assert.strictEqual(model.sparkline(null, 60).points.length, 0)
+assert.strictEqual(model.sparkline([], 60).points.length, 0)
+// A capacity too small to space samples in must not divide by zero.
+assert.ok(model.sparkline([1, 2], 1).points.every(function (point) {
+  return isFinite(point.x) && point.x >= 0 && point.x <= 1
+}))
+
 // ---------------------------------------------------------------- formatting
 
 assert.strictEqual(model.formatBytes(0), "0 B")
 assert.strictEqual(model.formatBytes(512), "512 B")
-assert.strictEqual(model.formatBytes(1024), "1.0 KB")
-assert.strictEqual(model.formatBytes(1536), "1.5 KB")
-assert.strictEqual(model.formatBytes(1024 * 1024 * 3.5), "3.5 MB")
-assert.strictEqual(model.formatBytes(1024 * 1024 * 20), "20 MB")
+assert.strictEqual(model.formatBytes(1024), "1.0 KiB")
+assert.strictEqual(model.formatBytes(1536), "1.5 KiB")
+assert.strictEqual(model.formatBytes(1024 * 1024 * 3.5), "3.5 MiB")
+assert.strictEqual(model.formatBytes(1024 * 1024 * 20), "20 MiB")
 assert.strictEqual(model.formatBytes(-5), "0 B")
-assert.strictEqual(model.formatSpeed(2048), "2.0 KB/s")
+assert.strictEqual(model.formatSpeed(2048), "2.0 KiB/s")
+
+// The divisor is 1024, so the unit has to say so: "815 MB" for 854,590,870
+// bytes reads 4.6% low against the megabyte every other tool means.
+assert.strictEqual(model.formatBytes(854590870), "815 MiB")
+assert.ok(model.UNITS.every(function (unit) { return !/^[KMGTP]B$/.test(unit) }),
+  "1024-based units must not be labelled with decimal names")
 
 assert.strictEqual(model.formatDuration(0), "0s")
 assert.strictEqual(model.formatDuration(45), "45s")

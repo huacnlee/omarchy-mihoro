@@ -157,7 +157,75 @@ assert.strictEqual(api.parseGlobalProxies("nope"), null)
 const sample = api.parseTrafficLine('{"up":120,"down":4096}')
 assert.strictEqual(sample.up, 120)
 assert.strictEqual(sample.down, 4096)
+assert.strictEqual(sample.hasTotals, false, "a core that sends no totals must say so")
 assert.strictEqual(api.parseTrafficLine(""), null)
 assert.strictEqual(api.parseTrafficLine("{}"), null)
+
+const withTotals = api.parseTrafficLine('{"up":1,"down":2,"upTotal":300,"downTotal":400}')
+assert.strictEqual(withTotals.hasTotals, true)
+assert.strictEqual(withTotals.upTotal, 300)
+assert.strictEqual(withTotals.downTotal, 400)
+
+// `Number(null)` is 0, which would pass for a counter reading zero.
+assert.strictEqual(api.parseTrafficLine('{"up":1,"down":2,"upTotal":null,"downTotal":null}').hasTotals, false)
+assert.strictEqual(api.parseTrafficLine('{"up":1,"down":2,"upTotal":5}').hasTotals, false)
+
+// ------------------------------------------------------------- traffic rate
+//
+// mihomo's `up`/`down` are a buffer its own one-second ticker overwrites,
+// emitted by a second ticker running out of phase with it, so consecutive
+// samples double-count and skip. The totals in the same message are exact, so
+// the rate comes from differencing them over the wall clock that really passed.
+
+const first = api.parseTrafficLine('{"up":9,"down":9,"upTotal":1000,"downTotal":5000}')
+const opening = api.trafficRate(null, first, 100)
+// Objects come out of the vm realm the loader uses, so their prototype is not
+// this realm's; fields are compared rather than whole objects.
+assert.strictEqual(opening.rate.up, 9, "with nothing to difference yet, the core's own reading is all there is")
+assert.strictEqual(opening.rate.down, 9)
+assert.strictEqual(opening.anchor.up, 1000)
+assert.strictEqual(opening.anchor.down, 5000)
+assert.strictEqual(opening.anchor.at, 100)
+
+// One second later: 500 up and 20000 down really moved, whatever `up`/`down` say.
+const second = api.parseTrafficLine('{"up":999999,"down":1,"upTotal":1500,"downTotal":25000}')
+const rated = api.trafficRate(opening.anchor, second, 101)
+assert.strictEqual(rated.rate.up, 500)
+assert.strictEqual(rated.rate.down, 20000)
+assert.strictEqual(rated.anchor.up, 1500)
+assert.strictEqual(rated.anchor.down, 25000)
+assert.strictEqual(rated.anchor.at, 101)
+
+// Half a second is still divisible, and the rate is per second, not per sample.
+const half = api.parseTrafficLine('{"up":0,"down":0,"upTotal":1750,"downTotal":25000}')
+assert.strictEqual(api.trafficRate(rated.anchor, half, 101.5).rate.up, 500)
+
+// Two lines delivered back to back must not divide a whole interval by ~0. The
+// anchor stays put so those bytes land in the next reading instead of spiking.
+const burst = api.parseTrafficLine('{"up":0,"down":0,"upTotal":9000,"downTotal":30000}')
+const held = api.trafficRate(rated.anchor, burst, 101.01)
+assert.strictEqual(held.rate, null, "too soon to divide by")
+assert.strictEqual(held.anchor, rated.anchor, "the anchor must not move")
+// ...and the bytes are still there one second on: 9000-1500 over 1.01s.
+const flushed = api.trafficRate(held.anchor, burst, 102.01)
+assert.ok(Math.abs(flushed.rate.up - 7500 / 1.01) < 1e-9)
+
+// A core that restarted underneath the stream resets its counters; a negative
+// delta must not be shown as a negative speed.
+const restarted = api.parseTrafficLine('{"up":7,"down":7,"upTotal":10,"downTotal":10}')
+const recovered = api.trafficRate(rated.anchor, restarted, 105)
+assert.strictEqual(recovered.rate.up, 7)
+assert.strictEqual(recovered.rate.down, 7)
+assert.strictEqual(recovered.anchor.up, 10)
+assert.strictEqual(recovered.anchor.down, 10)
+assert.strictEqual(recovered.anchor.at, 105)
+
+// Cores too old to send totals keep the old behaviour and never grow an anchor.
+const legacy = api.trafficRate(null, api.parseTrafficLine('{"up":8,"down":9}'), 200)
+assert.strictEqual(legacy.rate.up, 8)
+assert.strictEqual(legacy.rate.down, 9)
+assert.strictEqual(legacy.anchor, null)
+
+assert.strictEqual(api.trafficRate(null, null, 1), null)
 
 console.log("clash API tests passed")

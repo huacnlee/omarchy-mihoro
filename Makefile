@@ -4,6 +4,7 @@ QML_FILES := Panel.qml Service.qml \
 	components/SettingsIcon.qml \
 	components/SystemTheme.qml \
 	components/StatRow.qml \
+	components/Sparkline.qml \
 	components/ModeSection.qml \
 	components/ConnectionSection.qml \
 	components/SubscriptionSection.qml \

@@ -37,6 +37,16 @@ Item {
   property real uploadTotal: 0
   property real upSpeed: 0
   property real downSpeed: 0
+  // The recent history of the two speeds above, appended from the same stream
+  // readings that set them, and drawn behind them. It outlives the panel being
+  // closed; the seconds the stream was down are filled in when it comes back,
+  // so the curve continues rather than restarting. See `Model.padHistory`.
+  property var upHistory: []
+  property var downHistory: []
+  property real trafficIdleSince: 0
+  // The last `/traffic` reading a speed was published from. Not the previous
+  // sample: see `ClashApi.trafficRate`.
+  property var trafficAnchor: null
   property var globalProxyOptions: []
   property string currentGlobalProxy: ""
 
@@ -301,6 +311,8 @@ Item {
       trafficProcess.running = false
       upSpeed = 0
       downSpeed = 0
+      trafficAnchor = null
+      trafficIdleSince = Date.now() / 1000
     }
   }
 
@@ -445,9 +457,14 @@ Item {
       var result = ClashApi.classify(exitCode, versionOut.text, versionErr.text)
       root.apiState = result.ok ? "ok" : result.code
       root.mihomoVersion = result.ok ? ClashApi.parseVersion(result.body).version : ""
+      // Everything below is read from a core that just stopped answering.
+      // Leaving the totals behind would keep them on screen as if they were
+      // still being updated.
       if (!result.ok) {
         root.liveConfigs = null
         root.connectionCount = 0
+        root.downloadTotal = 0
+        root.uploadTotal = 0
       }
     }
   }
@@ -539,13 +556,37 @@ Item {
       onRead: function(line) {
         var sample = ClashApi.parseTrafficLine(line)
         if (!sample) return
-        root.upSpeed = sample.up
-        root.downSpeed = sample.down
+        var now = Date.now() / 1000
+        // First sample of a new stream: charge the time it was down to the
+        // history before appending to it, so the gap occupies the width it
+        // really lasted instead of vanishing between two adjacent points.
+        if (root.trafficAnchor === null && root.trafficIdleSince > 0) {
+          var gap = now - root.trafficIdleSince
+          root.upHistory = Model.padHistory(root.upHistory, gap, Model.HISTORY_LIMIT)
+          root.downHistory = Model.padHistory(root.downHistory, gap, Model.HISTORY_LIMIT)
+          root.trafficIdleSince = 0
+        }
+        var reading = ClashApi.trafficRate(root.trafficAnchor, sample, now)
+        if (!reading) return
+        root.trafficAnchor = reading.anchor
+        // A null rate means this sample came too soon after the anchor to
+        // divide by. Its bytes are still counted; they arrive with the next
+        // reading, and the displayed speed holds until then.
+        if (reading.rate) {
+          root.upSpeed = reading.rate.up
+          root.downSpeed = reading.rate.down
+          root.upHistory = Model.pushHistory(root.upHistory, reading.rate.up, Model.HISTORY_LIMIT)
+          root.downHistory = Model.pushHistory(root.downHistory, reading.rate.down, Model.HISTORY_LIMIT)
+        }
       }
     }
     onExited: {
       root.upSpeed = 0
       root.downSpeed = 0
+      root.trafficAnchor = null
+      // The history is kept; from here on it is a gap, and how long a gap is
+      // only known once the stream comes back.
+      root.trafficIdleSince = Date.now() / 1000
       // The stream ends whenever mihomo restarts or the network blips. Come
       // back on a delay rather than spinning on a core that is still booting.
       if (root.panelOpen) trafficRetry.restart()

@@ -27,26 +27,64 @@ Column {
     fontFamily: root.panelFontFamily
   }
 
-  Row {
-    id: trafficRow
+  // Both directions in one chart across the full width, with the two readouts
+  // laid over it. Two half-width charts split the same minute of history into
+  // two narrow windows and made the section read as two unrelated widgets;
+  // sharing one box puts the curves on a common time axis, where the shape of
+  // a transfer — upload spike, download answering it — is actually visible.
+  Item {
+    id: trafficPanel
     width: parent.width
-    spacing: Style.space(10)
+    implicitHeight: trafficRow.implicitHeight + Style.space(12)
+    height: implicitHeight
     opacity: root.live ? 1.0 : 0.45
 
-    Speed {
-      width: (trafficRow.width - trafficRow.spacing) / 2
-      glyph: "↓"
-      label: "DOWNLOAD"
-      metricColor: Color.accent
-      value: Model.formatSpeed(root.service.downSpeed)
+    // One scale for both curves. Overlaid in one box they are compared by
+    // height whether or not that was intended, so scaling each to its own
+    // window would draw a 200 B/s trickle as tall as a 5 MiB/s download.
+    // Upload therefore reads as a low line most of the time, which is the
+    // truth about most sessions.
+    readonly property real seriesPeak: Math.max(Model.peakOf(root.service.downHistory),
+                                                Model.peakOf(root.service.upHistory))
+
+    // Download first, upload over it: upload is the smaller series almost
+    // always, and the one that would otherwise be buried under the other's
+    // fill.
+    Sparkline {
+      anchors.fill: parent
+      history: root.service.downHistory
+      scalePeak: trafficPanel.seriesPeak
+      curveColor: Color.accent
     }
 
-    Speed {
-      width: (trafficRow.width - trafficRow.spacing) / 2
-      glyph: "↑"
-      label: "UPLOAD"
-      metricColor: Color.urgent
-      value: Model.formatSpeed(root.service.upSpeed)
+    Sparkline {
+      anchors.fill: parent
+      history: root.service.upHistory
+      scalePeak: trafficPanel.seriesPeak
+      curveColor: Color.urgent
+    }
+
+    Row {
+      id: trafficRow
+      width: parent.width
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Style.space(10)
+
+      Speed {
+        width: (trafficRow.width - trafficRow.spacing) / 2
+        glyph: "↓"
+        label: "DOWNLOAD"
+        metricColor: Color.accent
+        value: Model.formatSpeed(root.service.downSpeed)
+      }
+
+      Speed {
+        width: (trafficRow.width - trafficRow.spacing) / 2
+        glyph: "↑"
+        label: "UPLOAD"
+        metricColor: Color.urgent
+        value: Model.formatSpeed(root.service.upSpeed)
+      }
     }
   }
 

@@ -269,9 +269,121 @@ function displayUrl(url, revealed) {
   return revealed === true ? text : maskUrl(text)
 }
 
+// ------------------------------------------------------------------ history
+//
+// Throughput is sampled from the `/traffic` stream that already feeds the two
+// speed readouts, so the curve behind each one is drawn from the very numbers
+// printed on top of it and cannot drift from them.
+//
+// The series survives the panel closing, so reopening continues the curve
+// instead of starting from nothing. What it must not do is close the gap: the
+// curve spaces its samples evenly, so butting the last sample from ten minutes
+// ago against the first from now would draw them as neighbours and misstate
+// when the traffic happened. The seconds the stream was not running are filled
+// in as baseline slots instead — the same flat line the chart shows before it
+// has any data, which is exactly what those seconds are.
+
+// One minute at the stream's one-second cadence. The window is sized to how
+// long the panel is realistically open, not to how much history would be nice:
+// the curve grows in from the right, so a window that never fills would only
+// ever draw a stub against empty space.
+var HISTORY_LIMIT = 60
+
+// QML re-evaluates a `var` property's bindings when it is assigned, not when
+// the array it holds is mutated, so a new array is returned rather than the
+// sample being pushed into the old one.
+// `Array.isArray` rather than `instanceof Array` throughout: the check has to
+// hold for an array that was not built in this realm, which is what the tests
+// hand it when they load this file into a vm context.
+function pushHistory(history, sample, limit) {
+  var cap = Math.max(1, Math.floor(Number(limit) || 0) || 1)
+  var list = Array.isArray(history) ? history : []
+  var next = list.slice(Math.max(0, list.length - cap + 1))
+  var reading = Number(sample)
+  next.push(isFinite(reading) && reading > 0 ? reading : 0)
+  return next
+}
+
+// Records `slots` seconds during which nothing was sampled. Capped at the
+// window: a gap longer than the history leaves nothing of the old series to
+// keep, and the chart correctly comes back as a flat line.
+function padHistory(history, slots, limit) {
+  var list = Array.isArray(history) ? history : []
+  var count = Math.floor(Number(slots))
+  if (!isFinite(count) || count <= 0) return list
+  var cap = Math.max(1, Math.floor(Number(limit) || 0) || 1)
+  var next = list
+  var fill = Math.min(count, cap)
+  for (var i = 0; i < fill; i++) next = pushHistory(next, 0, cap)
+  return next
+}
+
+// Sparkline geometry in a 0..1 box: x runs left to right, y is 0 at the
+// baseline and 1 at the peak, leaving the QML nothing to do but scale.
+//
+// The newest sample is pinned to the right edge and the series grows leftward,
+// so a history that has only just started reads as a short line at "now"
+// instead of a full-width line that is mostly invention.
+//
+// The scale runs from zero to the peak, not from the window's minimum: twice
+// the throughput should draw twice as tall. Normalising to min..max instead
+// would blow an idle line's own jitter up to full height and make a quiet
+// minute look identical to a busy one.
+function peakOf(history) {
+  var list = Array.isArray(history) ? history : []
+  var peak = 0
+  for (var i = 0; i < list.length; i++) {
+    var seen = Number(list[i])
+    if (isFinite(seen) && seen > peak) peak = seen
+  }
+  return peak
+}
+
+function sparkline(history, capacity, scalePeak) {
+  var list = Array.isArray(history) ? history : []
+  var span = Math.max(2, Math.floor(Number(capacity) || 0) || 2) - 1
+  // A caller that draws several series side by side passes one peak for all of
+  // them, so equal heights mean equal throughput across the set. Left at zero,
+  // each series scales to its own window.
+  var forced = Number(scalePeak)
+  var peak = (isFinite(forced) && forced > 0) ? forced : peakOf(list)
+  var points = []
+  var i
+  var newest = list.length - 1
+  for (i = 0; i < list.length; i++) {
+    var reading = Number(list[i])
+    if (!isFinite(reading) || reading < 0) reading = 0
+    points.push({
+      x: Math.max(0, 1 - (newest - i) / span),
+      // Clamped: a shared peak can lag a series that just spiked past it.
+      y: peak > 0 ? Math.min(1, reading / peak) : 0
+    })
+  }
+  // Slots the panel was not open for. They are drawn as a flat line along the
+  // baseline so the box reads as a chart from the first second rather than as
+  // a stub floating at the right edge — but they are returned separately from
+  // the measured points, so the filled area can still mark exactly what was
+  // sampled and the empty stretch stays a bare line.
+  //
+  // With nothing sampled at all, `firstX` is the right edge and the lead spans
+  // the whole width: an empty chart is a flat baseline, not a blank box.
+  var lead = []
+  var firstX = points.length > 0 ? points[0].x : 1
+  if (firstX > 0) {
+    lead.push({ x: 0, y: 0 })
+    lead.push({ x: firstX, y: 0 })
+  }
+
+  return { points: points, lead: lead, peak: peak }
+}
+
 // ---------------------------------------------------------------- formatting
 
-var UNITS = ["B", "KB", "MB", "GB", "TB", "PB"]
+// Binary units, named as binary units. The arithmetic below divides by 1024,
+// which is what mihomo's own dashboard does, so the numbers stay comparable
+// with metacubexd — but calling 854,590,870 bytes "815 MB" understated it by
+// 4.6% against the decimal megabyte every other tool and every ISP quotes.
+var UNITS = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"]
 
 function formatBytes(bytes) {
   var value = Number(bytes)
