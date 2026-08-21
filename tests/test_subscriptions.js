@@ -1,4 +1,8 @@
 const assert = require("assert")
+const fs = require("fs")
+const os = require("os")
+const path = require("path")
+const { execFileSync } = require("child_process")
 const { load } = require("./load")
 
 const subs = load("Subscriptions.js")
@@ -20,8 +24,10 @@ assert.strictEqual(empty.activeId, "")
 same(empty.items, [])
 assert.strictEqual(subs.activeUrl(empty), "")
 assert.strictEqual(subs.count(empty), 0)
+// mihoro's own directory, beside the config file it hardcodes. The name says
+// what the file is because the directory says whose it is.
 assert.strictEqual(subs.storePath("/home/user"),
-  "/home/user/.config/omarchy/mihoro-subscriptions.json")
+  "/home/user/.config/mihoro/subscriptions.json")
 
 // ------------------------------------------------------------------- adding
 
@@ -223,21 +229,43 @@ assert.notStrictEqual(subs.nameError("x".repeat(61)), "")
 
 // ---------------------------------------------------------------- commands
 
-const write = subs.writeCommand("/home/user/.config/omarchy/mihoro-subscriptions.json")
+const STORE = "/home/user/.config/mihoro/subscriptions.json"
+
+const write = subs.writeCommand(STORE)
 assert.strictEqual(write[0], "bash")
 // The store holds several bearer URLs and is the panel's own file: 0600, and
-// renamed into place so a torn write cannot read back as an empty list.
+// renamed into place so a torn write cannot read back as an empty list. It also
+// makes its own directory — nothing else creates `~/.config/mihoro/`.
 assert.ok(write[2].includes("mktemp"))
 assert.ok(write[2].includes("chmod 600"))
 assert.ok(write[2].includes("mv -f"))
-assert.strictEqual(write[write.length - 1],
-  "/home/user/.config/omarchy/mihoro-subscriptions.json")
+assert.ok(write[2].includes("mkdir -p"))
+assert.strictEqual(write[write.length - 1], STORE)
 // The payload arrives on stdin, never as an argument — arguments are visible
 // in the process list.
 assert.ok(!write.some(function (part) { return String(part).includes("token=") }))
 
-const read = subs.readCommand("/home/user/.config/omarchy/mihoro-subscriptions.json")
+const read = subs.readCommand(STORE)
 assert.strictEqual(read[0], "bash")
 assert.ok(read[2].includes("cat"))
+assert.strictEqual(read[read.length - 1], STORE)
+
+// The scripts are the part that touches the user's disk, so they are run rather
+// than read. `Model.js`'s tests do the same with the probe.
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "omahoro-subs-"))
+const target = path.join(dir, ".config", "mihoro", "subscriptions.json")
+
+// Nothing there yet reads as nothing, without an error and without a directory.
+assert.strictEqual(
+  execFileSync("bash", subs.readCommand(target).slice(1), { encoding: "utf8" }), "")
+
+// The first write makes the directory and lands 0600.
+execFileSync("bash", subs.writeCommand(target).slice(1),
+  { input: subs.serialize(store), encoding: "utf8" })
+assert.strictEqual(fs.readFileSync(target, "utf8"), subs.serialize(store))
+assert.strictEqual(fs.statSync(target).mode & 0o777, 0o600)
+assert.strictEqual(
+  execFileSync("bash", subs.readCommand(target).slice(1), { encoding: "utf8" }),
+  subs.serialize(store))
 
 console.log("subscription store tests passed")

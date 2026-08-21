@@ -26,8 +26,17 @@ var VERSION = 1
 // row. Long enough for "Provider — backup region", short enough to render.
 var NAME_LIMIT = 60
 
+// mihoro's own directory. mihoro hardcodes `~/.config/mihoro.toml` and does not
+// consult XDG_CONFIG_HOME, so this is hardcoded beside it for the same reason
+// `MihoroConfig.configPath` is: the two have to agree on one place, and a path
+// that can be configured is a path that can disagree.
+//
+// The directory is what lets the file be called what it is. Loose in
+// `~/.config` it would have had to carry a prefix — that directory is shared
+// with every other application, and `subscriptions.json` there says nothing
+// about whose it is.
 function storePath(home) {
-  return String(home || "") + "/.config/omarchy/mihoro-subscriptions.json"
+  return String(home || "") + "/.config/mihoro/subscriptions.json"
 }
 
 function defaults() {

@@ -96,6 +96,10 @@ A subscription URL is a bearer token — the whole of the authentication.
 - The store is written `0600` through a temporary file in the same directory and
   renamed into place. `mihoro.toml` is not ours, so that write keeps the
   permissions it finds.
+- It lives in mihoro's own directory, hardcoded beside the config file mihoro
+  itself hardcodes. The two describe one thing between them — the file mihoro
+  reads names the subscription in effect, this one names the rest — and a path
+  that can be configured is a path that can disagree.
 - It does not go in `shell.json`: that file is world-readable, it is what people
   paste when they ask for help with their bar, and its writer rebuilds plugin
   entries from the manifest schema.
