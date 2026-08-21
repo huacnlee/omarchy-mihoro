@@ -31,7 +31,16 @@ Panel {
   // state. A panel this shallow does not need per-section cursors: the order
   // here is the order on screen.
   readonly property var targets: {
-    if (root.panelPage === 2) return ["update", "edit"]
+    if (root.panelPage === 2) {
+      // The rows come first and in list order, so a row's index in the
+      // subscription list is its index here.
+      var subs = []
+      var items = mihoro.subscriptionList
+      for (var i = 0; i < items.length; i++) subs.push("sub:" + items[i].id)
+      subs.push("update")
+      subs.push("add")
+      return subs
+    }
     if (root.panelPage === 3) return ["install"]
     if (!mihoro.probe.mihoroInstalled) return ["setup"]
     if (!mihoro.initialized) return ["setup"]
@@ -80,14 +89,15 @@ Panel {
     if (target === "power") mihoro.toggleService()
     else if (target === "mode") root.requestMode(Model.MODES[modeCursor].value)
     else if (target === "subscription") root.openSubscriptionPage()
-    else if (target === "edit") subscription.beginEdit()
+    else if (target.indexOf("sub:") === 0) mihoro.selectSubscription(target.substring(4))
+    else if (target === "add") subscription.beginAdd()
     else if (target === "update") mihoro.updateSubscription()
     else if (target === "install") mihoro.openInstallationGuide()
     else if (target === "setup") {
       if (!mihoro.probe.mihoroInstalled) root.openInstallPage()
       else {
         root.openSubscriptionPage()
-        subscription.beginEdit()
+        subscription.beginAdd()
       }
     }
   }
@@ -102,6 +112,12 @@ Panel {
       mihoro.cancelGlobalSelection()
       if (action === "switch") mihoro.setMode(value)
     }
+  }
+
+  function selectSubscriptionAt(index) {
+    var items = mihoro.subscriptionList
+    if (index < 0 || index >= items.length) return
+    mihoro.selectSubscription(items[index].id)
   }
 
   function openSubscriptionPage() {
@@ -189,8 +205,26 @@ Panel {
         core: mihoro.mihomoVersion,
         connections: mihoro.connectionCount,
         subscription: mihoro.config.remoteConfigUrl !== "",
+        subscriptions: mihoro.subscriptionList.length,
         updatedAt: mihoro.probe.configMtime
       })
+    }
+    // Names and ids only. The URLs are bearer credentials and no caller needs
+    // them to pick one.
+    function subscriptions(): string {
+      return JSON.stringify(mihoro.subscriptionList.map(function(entry) {
+        return { id: entry.id, name: entry.name, active: entry.id === mihoro.activeSubscriptionId }
+      }))
+    }
+    function select(value: string): string {
+      var wanted = String(value || "").trim()
+      if (wanted === "") return "expected a subscription id or name"
+      var items = mihoro.subscriptionList
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].id !== wanted && items[i].name.toLowerCase() !== wanted.toLowerCase()) continue
+        return mihoro.selectSubscription(items[i].id) ? "ok" : "already selected"
+      }
+      return "no subscription named " + wanted
     }
   }
 
@@ -261,7 +295,9 @@ Panel {
       onTextKey: function(text) {
         var key = String(text || "").toLowerCase()
         if (root.panelPage === 2 && key === "u") mihoro.updateSubscription()
-        else if (root.panelPage === 2 && key === "e") subscription.beginEdit()
+        else if (root.panelPage === 2 && key === "e") subscription.beginEditActive()
+        else if (root.panelPage === 2 && key === "a") subscription.beginAdd()
+        else if (root.panelPage === 2 && key >= "1" && key <= "9") root.selectSubscriptionAt(Number(key) - 1)
         else if (root.panelPage === 1 && key === "t") mihoro.toggleService()
         else if (root.panelPage === 1 && key === "r") mihoro.refresh()
         else if (root.panelPage === 1 && key === "s") root.openSubscriptionPage()
@@ -364,9 +400,12 @@ Panel {
           }
 
           // One line for whatever the panel most needs to say: what it is
-          // doing, what went wrong, or why the proxy is not connected.
+          // doing, what went wrong, or why the proxy is not connected. Page two
+          // shows it too: a subscription that could not be switched or saved
+          // reports here, and a silent no-op reads as the panel ignoring the
+          // click.
           Item {
-            visible: root.panelPage === 1 && text !== ""
+            visible: (root.panelPage === 1 || root.panelPage === 2) && text !== ""
             width: parent.width
             implicitHeight: Math.max(noticeText.implicitHeight, noticeClose.visible ? noticeClose.implicitHeight : 0)
             property alias text: noticeText.text
@@ -377,7 +416,8 @@ Panel {
               anchors.right: noticeClose.visible ? noticeClose.left : parent.right
               anchors.rightMargin: noticeClose.visible ? Style.space(6) : 0
               text: mihoro.actionStatus !== "" ? mihoro.actionStatus
-                : (mihoro.lastError !== "" ? mihoro.lastError : mihoro.connection.detail)
+                : (mihoro.lastError !== "" ? mihoro.lastError
+                  : (root.panelPage === 1 ? mihoro.connection.detail : ""))
               color: mihoro.lastError !== "" && mihoro.actionStatus === "" ? root.urgent : root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
@@ -408,7 +448,7 @@ Panel {
             onInstallRequested: root.openInstallPage()
             onAddUrlRequested: {
               root.openSubscriptionPage()
-              subscription.beginEdit()
+              subscription.beginAdd()
             }
           }
 
@@ -468,8 +508,21 @@ Panel {
             panelFontFamily: root.fontFamily
             cursorTarget: root.cursorTarget
             onBackRequested: root.leaveSubscriptionPage()
-            onUrlCommitted: function(url) { mihoro.setSubscriptionUrl(url) }
+            onSelectRequested: function(id) { mihoro.selectSubscription(id) }
+            onCommitRequested: function(id, name, url) {
+              if (id === "") mihoro.addSubscription(name, url)
+              else mihoro.saveSubscription(id, name, url)
+            }
+            onRemoveRequested: function(id) { mihoro.removeSubscription(id) }
             onUpdateRequested: mihoro.updateSubscription()
+            onRowHovered: function(index, isHovered) {
+              if (!isHovered) {
+                root.cursorActive = false
+                return
+              }
+              root.cursorActive = true
+              root.cursorIndex = index
+            }
             onEditingChanged: if (!editing) Qt.callLater(function() { keyCatcher.forceActiveFocus() })
           }
 

@@ -1,7 +1,7 @@
 QMLLINT := /usr/lib/qt6/bin/qmllint
 QML_FILES := Panel.qml Service.qml \
 	components/MihoroIcon.qml \
-	components/SettingsIcon.qml \
+	components/ActionIcon.qml \
 	components/SystemTheme.qml \
 	components/StatRow.qml \
 	components/Sparkline.qml \
@@ -21,6 +21,7 @@ test: test-js test-shell
 test-js:
 	node tests/test_theme_colors.js
 	node tests/test_mihoro_config.js
+	node tests/test_subscriptions.js
 	node tests/test_clash_api.js
 	node tests/test_model.js
 

@@ -6,7 +6,7 @@ Mihomo CLI client for Linux.
 <img width="320" alt="Mihoro for Omarchy" src="https://github.com/user-attachments/assets/f58b161e-389e-43bc-880a-8216c67eb863" />
 
 Use it to monitor your proxy, switch between Rule, Global, and Direct modes,
-and manage your subscription.
+and keep several subscriptions to switch between.
 
 ## Requirements
 
@@ -52,6 +52,31 @@ omarchy plugin remove mihoro.omarchy
 The panel looks for the mihomo binary where `mihomo_binary_path` in
 `~/.config/mihoro.toml` says it is, and falls back to your `PATH`. If you
 installed mihomo somewhere else, point that key at it.
+
+## Subscriptions
+
+mihoro holds one subscription at a time — `remote_config_url` in
+`~/.config/mihoro.toml` — so the panel keeps the list and hands the selected one
+down. Open **Subscriptions...** from the panel menu (or press `s`) to add, name,
+edit, and remove them; clicking a row switches to it, which writes its URL into
+`mihoro.toml` and runs `mihoro update --config` to fetch it.
+
+Whatever `mihoro.toml` already points at becomes the first entry the first time
+the panel runs, so nothing is lost on upgrade, and a URL you later set with
+`mihoro init` or by hand is picked up as an entry rather than overwritten.
+Removing the last subscription clears `remote_config_url`, returning the panel to
+its not-set-up state.
+
+The list lives in `~/.config/omarchy/mihoro-subscriptions.json`, written
+`0600` — subscription URLs are bearer credentials, so they are kept out of
+`shell.json` and never rendered outside the editor.
+
+From a script:
+
+```bash
+omarchy-shell mihoro.omarchy subscriptions     # names and ids, no URLs
+omarchy-shell mihoro.omarchy select Backup     # switch by name or id
+```
 
 If mihomo does not start, inspect its recent logs:
 

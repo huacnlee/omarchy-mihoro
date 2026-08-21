@@ -112,11 +112,12 @@ Column {
       foreground: root.textColor
       hoverColor: root.textColor
       size: Style.space(26)
-      tooltipText: "Manage subscription..."
+      tooltipText: "Manage subscriptions..."
       onClicked: root.subscriptionRequested()
 
-      SettingsIcon {
+      ActionIcon {
         anchors.centerIn: parent
+        name: "settings"
         iconSize: Style.font.body
         color: subscriptionButton._hot
           ? subscriptionButton.hoverColor
