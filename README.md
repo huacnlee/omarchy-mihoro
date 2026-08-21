@@ -67,9 +67,9 @@ the panel runs, so nothing is lost on upgrade, and a URL you later set with
 Removing the last subscription clears `remote_config_url`, returning the panel to
 its not-set-up state.
 
-The list lives in `~/.config/omarchy/mihoro-subscriptions.json`, written
-`0600` — subscription URLs are bearer credentials, so they are kept out of
-`shell.json` and never rendered outside the editor.
+The list lives in `~/.config/mihoro/subscriptions.json`, written `0600` —
+subscription URLs are bearer credentials, so they are kept out of `shell.json`
+and never rendered outside the editor.
 
 From a script:
 

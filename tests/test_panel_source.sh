@@ -144,7 +144,13 @@ grep -Fq 'mktemp' MihoroConfig.js
 grep -Fq 'chmod --reference' MihoroConfig.js
 grep -Fq 'mktemp' Subscriptions.js
 grep -Fq 'chmod 600' Subscriptions.js
-grep -Fq '.config/omarchy/mihoro-subscriptions.json' Subscriptions.js
+# The list lives in mihoro's own directory, hardcoded beside the config file
+# mihoro itself hardcodes — the two have to agree on one place, and a path that
+# can be configured is a path that can disagree.
+grep -Fq '/.config/mihoro/subscriptions.json' Subscriptions.js
+grep -Fq 'Subscriptions.storePath(home)' Service.qml
+# The write makes the directory: nothing else creates ~/.config/mihoro/.
+grep -Fq 'mkdir -p' Subscriptions.js
 
 # stdin is opened per write and closed in onStarted to give `cat` its EOF. A
 # declarative `stdinEnabled: true` would be replaced by that close, and the
