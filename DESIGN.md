@@ -68,7 +68,25 @@ credential.
   reopens where it was left is a popup that shows the wrong thing after the
   panel has been shut for a day.
 - Page one is the whole state at a glance: what it is doing, what went wrong, or
-  why the proxy is not connected, in **one** notice line.
+  why the proxy is not connected, in **one** notice line. A failure may take up
+  to three, and no more — past that the panel is more error than panel. The
+  clamp is `maximumLineCount`, not a character count: it has to hold against the
+  reader's font size and the panel's real width.
+- **A message from outside is shortened before it is shown, never by the clamp.**
+  mihoro quotes back the URL it was given and the body it could not parse, so
+  the notice would otherwise render a bearer token and several kilobytes on one
+  line. `Model.noticeMessage` redacts URLs to their host and collapses quoted
+  payloads first; eliding first could stop halfway through a token and leave the
+  front of it on screen.
+- **What will not fit goes to an agent, on a button.** Three lines cannot hold
+  why `mihoro update` failed, and the panel can neither read a journal nor fetch
+  a URL to find out. `Diagnose...` writes the whole output to a `0600` file and
+  points the user's default agent at it. It is offered only for a failed mihoro
+  command — a rejected URL is the user's to fix — and only once
+  `omarchy-default-agent` names one, because a button that opens nothing
+  explains nothing. It never opens on its own: a failed update must not spawn a
+  terminal nobody asked for. It carries the plain foreground, not `urgent`: the
+  failure is the notice line above it, and the button is an offer.
 - **A refused or failed action reports on the page it happened on.** A notice
   that only renders on page one turns a rejected subscription switch into the
   panel appearing to ignore the click. That was a real bug.
@@ -92,7 +110,8 @@ A subscription URL is a bearer token — the whole of the authentication.
 - It is never rendered outside the editor. Rows carry the name the user gave the
   subscription, which defaults to the URL's host.
 - It never reaches a command line; it goes over stdin. Arguments are visible in
-  the process list.
+  the process list. This is why the diagnosis prompt carries paths rather than
+  the failure output: `omarchy-agent --prompt` becomes argv.
 - The store is written `0600` through a temporary file in the same directory and
   renamed into place. `mihoro.toml` is not ours, so that write keeps the
   permissions it finds.

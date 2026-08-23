@@ -405,14 +405,27 @@ Panel {
           // reports here, and a silent no-op reads as the panel ignoring the
           // click.
           Item {
+            id: noticeBlock
             visible: (root.panelPage === 1 || root.panelPage === 2) && text !== ""
             width: parent.width
-            implicitHeight: Math.max(noticeText.implicitHeight, noticeClose.visible ? noticeClose.implicitHeight : 0)
+            implicitHeight: Math.max(noticeText.implicitHeight,
+                noticeClose.visible ? noticeClose.implicitHeight : 0)
+              + (offersDiagnosis ? noticeDiagnose.implicitHeight + Style.space(4) : 0)
             property alias text: noticeText.text
+
+            // One condition, read by both the button and this block's height.
+            // Reading the button's own `visible` here instead would tie the
+            // block to a value QQuickItem propagates downward from it: the
+            // first time the button hid, the block would hide with it, and the
+            // child would then read false for good. That latch is why the
+            // button never appeared at all.
+            readonly property bool offersDiagnosis: mihoro.actionStatus === ""
+              && Model.canDiagnose(mihoro.lastErrorKind, mihoro.defaultAgent)
 
             Text {
               id: noticeText
               anchors.left: parent.left
+              anchors.top: parent.top
               anchors.right: noticeClose.visible ? noticeClose.left : parent.right
               anchors.rightMargin: noticeClose.visible ? Style.space(6) : 0
               text: mihoro.actionStatus !== "" ? mihoro.actionStatus
@@ -422,6 +435,13 @@ Panel {
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               wrapMode: Text.WordWrap
+              // Three lines is what a failure gets before the panel is more
+              // error than panel. Qt clamps against the real width and the
+              // reader's own font size; counting characters here would be wrong
+              // the moment either changed. The message is already shortened and
+              // redacted upstream, so a clamp can only ever drop wording.
+              maximumLineCount: 3
+              elide: Text.ElideRight
             }
 
             Button {
@@ -432,8 +452,31 @@ Panel {
               text: "×"
               foreground: root.urgent
               bordered: false
-              fontSize: Style.font.body
+              fontSize: Style.font.bodySmall
               onClicked: mihoro.clearNotice()
+            }
+
+            // Three lines cannot hold why a mihoro command failed, and the
+            // panel can neither read a journal nor fetch a URL to find out.
+            // Handing the whole output to the user's own agent is the honest
+            // way to say more — offered as a button, never opened on its own: a
+            // failed update must not spawn a terminal nobody asked for.
+            Button {
+              id: noticeDiagnose
+              visible: noticeBlock.offersDiagnosis
+              anchors.left: parent.left
+              anchors.top: noticeText.bottom
+              anchors.topMargin: Style.space(4)
+              // `...` because it opens a terminal workflow rather than
+              // finishing the job here.
+              text: "Diagnose..."
+              // Not urgent: urgent is failure and destruction, and the failure
+              // is the line above. Not accent either, which means connected or
+              // selected. An offer reads as a plain action.
+              foreground: root.foreground
+              bordered: true
+              fontSize: Style.font.bodySmall
+              onClicked: mihoro.diagnose()
             }
           }
 

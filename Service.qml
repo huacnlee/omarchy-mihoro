@@ -71,6 +71,30 @@ Item {
   property string actionStatus: ""
   property string lastError: ""
 
+  // The one error worth handing to an agent is a staged mihoro command that
+  // failed: its output runs to kilobytes and its cause is usually somewhere the
+  // panel cannot look. A rejected URL is the user's to fix and a failed write is
+  // a permissions problem, so neither sets this.
+  //
+  // The kind travels with the message, never outliving it — see reportError.
+  property string lastErrorKind: ""
+  property string lastFailureOutput: ""
+
+  // Empty until the user picks one; Omarchy ships with no default agent, and
+  // there is nothing to offer until there is something to open.
+  property string defaultAgent: ""
+
+  onLastErrorChanged: if (lastError === "") lastErrorKind = ""
+
+  // Every error that is not a failed mihoro command reports through here, so it
+  // takes the diagnosis offer down with it. Without this the button would
+  // survive its own failure and point the agent at a log the user has already
+  // moved past.
+  function reportError(message) {
+    lastErrorKind = ""
+    lastError = message
+  }
+
   readonly property int refreshIntervalSec: {
     var raw = settings ? settings.refreshIntervalSec : undefined
     var value = parseInt(String(raw === undefined || raw === null ? 30 : raw), 10)
@@ -318,7 +342,7 @@ Item {
     if (problem === "") problem = Subscriptions.nameError(name)
     if (problem === "") problem = duplicateError(text, "")
     if (problem !== "") {
-      lastError = problem
+      reportError(problem)
       return false
     }
     lastError = ""
@@ -338,7 +362,7 @@ Item {
     if (problem === "") problem = Subscriptions.nameError(name)
     if (problem === "") problem = duplicateError(text, entry.id)
     if (problem !== "") {
-      lastError = problem
+      reportError(problem)
       return false
     }
     lastError = ""
@@ -381,6 +405,27 @@ Item {
     subscriptionsWriteProcess.running = true
   }
 
+  // Checked per open rather than once at startup, so choosing an agent takes
+  // effect without restarting the shell. omarchy-crash-watch re-checks per crash
+  // for the same reason.
+  function refreshDefaultAgent() {
+    if (defaultAgentProcess.running) return
+    defaultAgentProcess.command = Model.defaultAgentCommand()
+    defaultAgentProcess.running = true
+  }
+
+  // The output quotes back the URL it was given and whatever the server
+  // answered with, so it goes to a 0600 file rather than into the prompt:
+  // `--prompt` becomes argv, and the process list is world-readable.
+  function diagnose() {
+    if (!Model.canDiagnose(lastErrorKind, defaultAgent)) return
+    if (failureLogWriteProcess.running || diagnoseProcess.running) return
+    _pendingFailureLog = lastFailureOutput
+    failureLogWriteProcess.command = Model.failureLogWriteCommand(Model.failureLogPath(home))
+    failureLogWriteProcess.stdinEnabled = true
+    failureLogWriteProcess.running = true
+  }
+
   function runAction(kind, command, label) {
     if (actionProcess.running) return
     actionKind = kind
@@ -400,6 +445,7 @@ Item {
   property string _actionError: ""
   property string _pendingClipboard: ""
   property string _pendingSubscriptions: ""
+  property string _pendingFailureLog: ""
   property bool _subscriptionsQueued: false
 
   function writeConfig(changes, thenAction) {
@@ -462,6 +508,7 @@ Item {
     if (panelOpen) {
       refresh()
       refreshConnections()
+      refreshDefaultAgent()
     }
     syncTraffic()
   }
@@ -554,9 +601,54 @@ Item {
         actionStatusTimer.restart()
       } else {
         root.actionStatus = ""
-        root.lastError = "Could not open the Mihoro installation guide."
+        root.reportError("Could not open the Mihoro installation guide.")
       }
       settleTimer.restart()
+    }
+  }
+
+  Process {
+    id: defaultAgentProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: defaultAgentOut; waitForEnd: true }
+    onExited: function(exitCode) {
+      root.defaultAgent = exitCode === 0 ? String(defaultAgentOut.text || "").trim() : ""
+    }
+  }
+
+  Process {
+    id: failureLogWriteProcess
+    running: false
+    command: []
+    // Set per write, not bound: `onStarted` closes stdin, and a binding would
+    // fight that.
+    stdinEnabled: false
+    onStarted: {
+      failureLogWriteProcess.write(root._pendingFailureLog)
+      root._pendingFailureLog = ""
+      failureLogWriteProcess.stdinEnabled = false
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        root.reportError("Could not save the failure log.")
+        return
+      }
+      diagnoseProcess.command = Model.diagnoseCommand(
+        Model.diagnosePrompt(root.lastErrorKind, Model.failureLogPath(root.home),
+          root.mihoroConfigPath))
+      diagnoseProcess.running = true
+    }
+  }
+
+  Process {
+    id: diagnoseProcess
+    running: false
+    command: []
+    onExited: function(exitCode) {
+      // omarchy-agent detaches the terminal, so a non-zero exit is the launch
+      // itself failing rather than the agent finishing.
+      if (exitCode !== 0) root.reportError("Could not open the diagnosis.")
     }
   }
 
@@ -675,7 +767,7 @@ Item {
       var result = ClashApi.classify(exitCode, proxySelectOut.text, proxySelectErr.text)
       if (!result.ok) {
         root.cancelGlobalSelection()
-        root.lastError = result.message
+        root.reportError(result.message)
         return
       }
       var selected = root.pendingGlobalProxy
@@ -750,7 +842,7 @@ Item {
       if (exitCode !== 0 || root._pendingClipboard.trim() === "") {
         root._pendingClipboard = ""
         root.actionStatus = ""
-        root.lastError = "Could not export proxy info."
+        root.reportError("Could not export proxy info.")
         return
       }
       clipboardProcess.stdinEnabled = true
@@ -770,7 +862,8 @@ Item {
     }
     onExited: function(exitCode) {
       root.actionStatus = exitCode === 0 ? "Proxy export copied." : ""
-      root.lastError = exitCode === 0 ? "" : "Could not copy proxy info."
+      if (exitCode === 0) root.lastError = ""
+      else root.reportError("Could not copy proxy info.")
       if (exitCode === 0) actionStatusTimer.restart()
     }
   }
@@ -794,7 +887,7 @@ Item {
       if (exitCode !== 0) {
         root._afterWrite = ""
         root.pendingMode = ""
-        root.lastError = Model.elide(writeErr.text || "Could not write mihoro.toml.", 160)
+        root.reportError(Model.noticeMessage(writeErr.text || "Could not write mihoro.toml."))
         // The file on disk is not what the panel just assumed it was.
         root.refresh()
         return
@@ -833,8 +926,8 @@ Item {
     onExited: function(exitCode) {
       if (exitCode !== 0) {
         root._subscriptionsQueued = false
-        root.lastError = Model.elide(
-          subscriptionsWriteErr.text || "Could not save the subscription list.", 160)
+        root.reportError(Model.noticeMessage(
+          subscriptionsWriteErr.text || "Could not save the subscription list."))
         // What is on screen is not what is on disk; the file is the truth.
         root.loadSubscriptions()
         return
@@ -890,9 +983,12 @@ Item {
         root.desiredActive = -1
         root.pendingMode = ""
         root.actionStatus = ""
-        root.lastError = Model.stageFailureMessage(
-          root._actionOutput + "\n" + root._actionError,
+        // The notice gets a message it can render; the log keeps the whole of
+        // what was printed, for an agent that can read more than three lines.
+        root.lastFailureOutput = root._actionOutput + "\n" + root._actionError
+        root.lastError = Model.stageFailureMessage(root.lastFailureOutput,
           "mihoro " + kind + " failed.")
+        root.lastErrorKind = kind
       }
       root.actionKind = ""
       root.actionFinished(kind, ok)
