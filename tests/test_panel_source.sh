@@ -350,6 +350,38 @@ if problems:
 print("component scoping ok")
 PY
 
+# ---- failure notice and diagnosis -----------------------------------------
+
+# A failure message quotes back the URL mihoro was given and the body it could
+# not parse — a bearer token and several kilobytes, on their way to a notice
+# line. Redaction runs before shortening: eliding first could stop halfway
+# through a token and leave the front of it on screen.
+grep -Fq 'function redactUrls' Model.js
+grep -Fq 'function collapseQuoted' Model.js
+grep -Fq 'elide(collapseQuoted(redactUrls(text), 60), 240)' Model.js
+! grep -Fq 'return parsed.name + ": " + parsed.detail' Model.js
+
+# Three lines, clamped by Qt against the panel's real width and the reader's own
+# font size. Counting characters here would break the moment either changed.
+grep -Fq 'maximumLineCount: 3' Panel.qml
+grep -Fq 'elide: Text.ElideRight' Panel.qml
+
+# The diagnosis is offered only for a failed mihoro command, and only once a
+# default agent exists to open: Omarchy ships without one, and a button that
+# opens nothing explains nothing.
+grep -Fq 'Model.canDiagnose(mihoro.lastErrorKind, mihoro.defaultAgent)' Panel.qml
+grep -Fq 'Model.defaultAgentCommand()' Service.qml
+grep -Fq 'lastErrorKind' Service.qml
+# It opens a terminal workflow rather than completing the action here.
+grep -Fq 'Diagnose...' Panel.qml
+
+# The output goes to a 0600 file over stdin. The prompt carries paths to it,
+# because --prompt is argv and the process list is world-readable.
+grep -Fq 'Model.failureLogWriteCommand' Service.qml
+grep -Fq 'Model.diagnosePrompt' Service.qml
+grep -Fq 'Model.diagnoseCommand' Service.qml
+! grep -Eq 'diagnosePrompt\([^)]*(_actionOutput|_actionError|remoteConfigUrl)' Service.qml
+
 # ---- privacy --------------------------------------------------------------
 
 # The subscription URL and the API secret are credentials. Neither is written

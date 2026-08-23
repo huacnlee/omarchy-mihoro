@@ -422,6 +422,13 @@ Panel {
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               wrapMode: Text.WordWrap
+              // Three lines is what a failure gets before the panel is more
+              // error than panel. Qt clamps against the real width and the
+              // reader's own font size; counting characters here would be wrong
+              // the moment either changed. The message is already shortened and
+              // redacted upstream, so a clamp can only ever drop wording.
+              maximumLineCount: 3
+              elide: Text.ElideRight
             }
 
             Button {
@@ -434,6 +441,31 @@ Panel {
               bordered: false
               fontSize: Style.font.body
               onClicked: mihoro.clearNotice()
+            }
+          }
+
+          // Three lines cannot hold why a mihoro command failed, and the panel
+          // cannot read journals or fetch a URL to find out. Handing the whole
+          // output to the user's own agent is the honest way to say more —
+          // offered as a button, never opened on its own: a failed update must
+          // not spawn a terminal the user did not ask for.
+          Item {
+            visible: (root.panelPage === 1 || root.panelPage === 2) && noticeDiagnose.visible
+            width: parent.width
+            implicitHeight: noticeDiagnose.implicitHeight
+
+            Button {
+              id: noticeDiagnose
+              anchors.left: parent.left
+              // `...` because it opens a terminal workflow rather than
+              // finishing the job here.
+              text: "Diagnose..."
+              visible: mihoro.actionStatus === ""
+                && Model.canDiagnose(mihoro.lastErrorKind, mihoro.defaultAgent)
+              foreground: root.urgent
+              bordered: false
+              fontSize: Style.font.bodySmall
+              onClicked: mihoro.diagnose()
             }
           }
 
