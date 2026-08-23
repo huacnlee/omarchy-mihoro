@@ -85,7 +85,8 @@ credential.
   command — a rejected URL is the user's to fix — and only once
   `omarchy-default-agent` names one, because a button that opens nothing
   explains nothing. It never opens on its own: a failed update must not spawn a
-  terminal nobody asked for.
+  terminal nobody asked for. It carries the plain foreground, not `urgent`: the
+  failure is the notice line above it, and the button is an offer.
 - **A refused or failed action reports on the page it happened on.** A notice
   that only renders on page one turns a rejected subscription switch into the
   panel appearing to ignore the click. That was a real bug.
