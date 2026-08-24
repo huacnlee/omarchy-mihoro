@@ -92,7 +92,7 @@ change. Save the following as
 
 ```bash
 #!/bin/bash
-USER_NAME="luotao"          # your username
+USER_NAME="your-username"   # your username
 export XDG_RUNTIME_DIR="/run/user/1000"  # uid, usually 1000
 case "$2" in
   up | down | connectivity-change | dhcp4-change | reapply)
