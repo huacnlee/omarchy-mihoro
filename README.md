@@ -59,6 +59,53 @@ If mihomo does not start, inspect its recent logs:
 journalctl --user -u mihomo.service -n 30 --no-pager
 ```
 
+### Traffic stops after a WiFi reconnect (TUN mode)
+
+With TUN enabled, mihomo caches the default network interface. When the WiFi
+device bounces — after suspend/resume, roaming, or a DHCP renewal — that cached
+interface disappears and traffic blackholes until mihomo restarts. The logs fill
+with lines like:
+
+```
+[TUN] Auto detect interface for 223.5.5.5 failed, return '<invalid>' to avoid lookback
+dial tcp <proxy-host>: no such device
+```
+
+Restarting the service from this panel's menu fixes it, but you can also reload
+the core in place over mihomo's REST API, which re-detects the interface without
+a full process restart:
+
+```bash
+curl -s -X PUT \
+  -H "Authorization: Bearer <secret>" \
+  'http://127.0.0.1:9090/configs?force=true' \
+  -d '{"path":"","payload":""}'
+```
+
+`<secret>` is the `secret` value from `~/.config/mihomo/config.yaml`, and the
+host/port come from `external-controller` there.
+
+To recover automatically, ask NetworkManager to run that on every network
+change. Save the following as
+`/etc/NetworkManager/dispatcher.d/90-mihoro` (root-owned, `chmod 755`), with
+`USER_NAME` and `XDG_RUNTIME_DIR` matching your user:
+
+```bash
+#!/bin/bash
+USER_NAME="luotao"          # your username
+export XDG_RUNTIME_DIR="/run/user/1000"  # uid, usually 1000
+case "$2" in
+  up | down | connectivity-change | dhcp4-change | reapply)
+    sleep 3  # let the new connection settle; reconnects fire events in bursts
+    systemctl --user -M "$USER_NAME@" restart mihomo.service
+    ;;
+esac
+```
+
+This uses a service restart rather than the API reload: the dispatcher runs as
+root outside your session, and a restart is the most battle-tested recovery.
+Swap in the `curl` command above if you prefer the lighter touch.
+
 ## Development
 
 ```bash
