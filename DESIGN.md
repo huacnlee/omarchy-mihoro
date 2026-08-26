@@ -109,6 +109,11 @@ credential.
   actions, digits for a list.
 - An open node picker owns the keys — its search filter accepts every letter the
   panel binds — so the key catcher yields to it as it does to the URL editor.
+- `d` tests the delays of the group under the cursor, and `u` toggles TUN. A
+  pick made while a switch is in flight is queued (latest wins), never dropped.
+- The poll watchdog reaps polls only. Its fuse is tied to the refresh that armed
+  it, so reaping an action from it could kill a healthy delay test mid-flight;
+  actions bound themselves with curl's `--max-time` instead.
 
 ## Credentials
 

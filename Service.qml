@@ -234,22 +234,36 @@ Item {
   }
 
   // Same endpoint as the GLOBAL picker, aimed at any Selector group — what
-  // `proxy-node` does from a terminal. The dropdown moves at once and a
-  // refresh confirms, exactly like a mode switch.
+  // `proxy-node` does from a terminal. Unlike a mode switch there is no
+  // `mihoro apply` fallback, so this runs only while the API actually answers;
+  // a stale picker against a dead API would just burn curl's timeout and
+  // report an error. A second pick while one is in flight is queued rather
+  // than dropped — latest wins, because that is where the user's eye is.
+  property var _queuedNode: null
+
   function selectNode(group, name) {
     var wantedGroup = String(group || "")
     var wantedName = String(name || "")
-    if (wantedGroup === "" || wantedName === "" || !canSwitchMode) return
-    if (nodeSelectProcess.running) return
+    if (wantedGroup === "" || wantedName === "") return
+    if (connection.key !== "running") return
+    if (nodeSelectProcess.running) {
+      _queuedNode = { group: wantedGroup, name: wantedName }
+      return
+    }
+    startNodeSelect(wantedGroup, wantedName)
+  }
+
+  function startNodeSelect(wantedGroup, wantedName) {
     pendingNode = { group: wantedGroup, name: wantedName }
     lastError = ""
+    optimismTimer.restart()
     nodeSelectProcess.command = ClashApi.selectProxyCommand(apiBase, config.secret, wantedGroup, wantedName)
     nodeSelectProcess.running = true
   }
 
   function testGroupDelay(group) {
     var wanted = String(group || "")
-    if (wanted === "" || apiBase === "" || !serviceActive || delayProcess.running) return
+    if (wanted === "" || connection.key !== "running" || delayProcess.running) return
     testingDelayGroup = wanted
     lastError = ""
     delayProcess.command = ClashApi.groupDelayCommand(apiBase, config.secret, wanted)
@@ -265,6 +279,7 @@ Item {
     if (!liveConfigs || liveConfigs.tunEnabled === null) return
     pendingTun = liveConfigs.tunEnabled ? 0 : 1
     lastError = ""
+    optimismTimer.restart()
     tunProcess.command = ClashApi.setTunCommand(apiBase, config.secret, pendingTun === 1)
     tunProcess.running = true
   }
@@ -606,6 +621,8 @@ Item {
     onTriggered: {
       root.desiredActive = -1
       root.pendingMode = ""
+      root.pendingNode = null
+      root.pendingTun = -1
     }
   }
 
@@ -631,9 +648,6 @@ Item {
       if (connectionsProcess.running) connectionsProcess.running = false
       if (proxiesProcess.running) proxiesProcess.running = false
       if (subscriptionsReadProcess.running) subscriptionsReadProcess.running = false
-      if (nodeSelectProcess.running) nodeSelectProcess.running = false
-      if (delayProcess.running) delayProcess.running = false
-      if (tunProcess.running) tunProcess.running = false
     }
   }
 
@@ -769,8 +783,14 @@ Item {
       root.liveConfigs = parsed
       // The core has spoken; stop overriding with the click.
       if (root.pendingMode !== "" && parsed.mode === root.pendingMode) root.pendingMode = ""
+      // Same for TUN — including when the core disagrees, but only once the
+      // PATCH has finished: a restart can restore config.yaml's value, and an
+      // authoritative answer that never matches must not hold the toggle busy
+      // forever. While the PATCH is still in flight a disagreeing read is just
+      // the old state, so the overlay stays.
       if (root.pendingTun !== -1 && parsed.tunEnabled !== null
-          && (parsed.tunEnabled === true) === (root.pendingTun === 1)) root.pendingTun = -1
+          && ((parsed.tunEnabled === true) === (root.pendingTun === 1) || !tunProcess.running))
+        root.pendingTun = -1
     }
   }
 
@@ -857,18 +877,24 @@ Item {
     stderr: StdioCollector { id: nodeSelectErr; waitForEnd: true }
     onExited: function(exitCode) {
       var result = ClashApi.classify(exitCode, nodeSelectOut.text, nodeSelectErr.text)
+      var queued = root._queuedNode
+      root._queuedNode = null
       if (!result.ok) {
         root.pendingNode = null
         root.reportError(result.message)
-        return
+      } else {
+        var pending = root.pendingNode
+        if (pending !== null) {
+          root.actionStatus = pending.group + " → " + pending.name
+          actionStatusTimer.restart()
+        }
+        // The overlay stays until /proxies confirms it (or the optimism
+        // deadline drops it): clearing here would snap the picker back to the
+        // stale `now` for the whole round trip, and for good if the refresh
+        // fails after a successful switch.
+        root.refreshProxies()
       }
-      var pending = root.pendingNode
-      if (pending !== null) {
-        root.actionStatus = pending.group + " → " + pending.name
-        actionStatusTimer.restart()
-      }
-      root.pendingNode = null
-      root.refreshProxies()
+      if (queued !== null) root.selectNode(queued.group, queued.name)
     }
   }
 

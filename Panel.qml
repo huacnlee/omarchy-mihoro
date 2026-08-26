@@ -47,6 +47,7 @@ Panel {
     var list = ["power"]
     if (mihoro.canSwitchMode) list.push("mode")
     for (var i = 0; i < mihoro.proxyGroups.length; i++) list.push("node:" + mihoro.proxyGroups[i].name)
+    if (mihoro.liveConfigs && mihoro.liveConfigs.tunEnabled !== null) list.push("tun")
     list.push("subscription")
     return list
   }
@@ -102,6 +103,7 @@ Panel {
     if (target === "power") mihoro.toggleService()
     else if (target === "mode") root.requestMode(Model.MODES[modeCursor].value)
     else if (target.indexOf("node:") === 0) nodesSection.openGroup(target.substring(5))
+    else if (target === "tun") mihoro.toggleTun()
     else if (target === "subscription") root.openSubscriptionPage()
     else if (target.indexOf("sub:") === 0) mihoro.selectSubscription(target.substring(4))
     else if (target === "add") subscription.beginAdd()
@@ -332,6 +334,12 @@ Panel {
         else if (root.panelPage === 1 && key === "r") mihoro.refresh()
         else if (root.panelPage === 1 && key === "s") root.openSubscriptionPage()
         else if (root.panelPage === 1 && key === "n") root.focusNodes()
+        else if (root.panelPage === 1 && key === "u") mihoro.toggleTun()
+        else if (root.panelPage === 1 && key === "d") {
+          // Tests the group under the cursor; with the cursor elsewhere there
+          // is nothing to aim the test at.
+          if (root.cursorTarget.indexOf("node:") === 0) mihoro.testGroupDelay(root.cursorTarget.substring(5))
+        }
         else if (root.panelPage === 1 && key === "i") root.openInstallPage()
         else if (root.panelPage === 1 && key === "m") root.cycleMode(1)
         else if (root.panelPage === 1 && key === "1") root.requestMode("rule")
@@ -576,6 +584,7 @@ Panel {
             groups: mihoro.proxyGroups
             pendingNode: mihoro.pendingNode
             testingGroup: mihoro.testingDelayGroup
+            switchable: mihoro.connection.key === "running"
             cursorIndex: root.nodeCursorIndex
             onNodeRequested: function(group, name) { mihoro.selectNode(group, name) }
             onTestRequested: function(group) { mihoro.testGroupDelay(group) }
@@ -598,6 +607,14 @@ Panel {
             service: mihoro
             textColor: root.foreground
             panelFontFamily: root.fontFamily
+            tunCursor: root.cursorTarget === "tun"
+            onTunHovered: function(isHovered) {
+              if (!isHovered) return
+              var index = root.targets.indexOf("tun")
+              if (index < 0) return
+              root.cursorActive = true
+              root.cursorIndex = index
+            }
           }
 
           SubscriptionSection {

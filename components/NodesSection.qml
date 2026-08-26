@@ -21,6 +21,11 @@ Column {
   // The switch in flight, as `{group, name}`; null when nothing is.
   property var pendingNode: null
   property string testingGroup: ""
+  // Not `enabled`: that is an Item property, and shadowing it would also stop
+  // the section receiving input events rather than just greying out. False
+  // when the API is not answering — a picker against a dead core would fire a
+  // doomed PUT and the data on screen is stale anyway.
+  property bool switchable: true
   property int cursorIndex: -1
 
   signal nodeRequested(string group, string name)
@@ -132,7 +137,7 @@ Column {
           foreground: root.textColor
           hoverColor: root.textColor
           size: Style.space(26)
-          enabled: root.testingGroup === ""
+          enabled: root.switchable && root.testingGroup === ""
           opacity: enabled ? 1.0 : 0.45
           tooltipText: "Test delays"
           onClicked: root.testRequested(groupRow.groupName)
@@ -173,6 +178,8 @@ Column {
         id: dropdown
         width: parent.width
         showLabel: false
+        enabled: root.switchable
+        opacity: root.switchable ? 1.0 : 0.45
         value: groupRow.currentNode
         options: Model.sortNodesByDelay(groupRow.modelData.nodes).map(function(node) {
           return { value: node.name, label: node.name, description: Model.formatDelay(node.delay) }

@@ -107,6 +107,32 @@ grep -Fq 'ClashApi.selectProxyCommand(apiBase, config.secret, wantedGroup, wante
 grep -Fq 'mihoro.selectNode(group, name)' Panel.qml
 grep -Fq 'function node(group: string, name: string): string' Panel.qml
 
+# Node switching and delay tests are API-only: no `mihoro apply` fallback like
+# the mode switch has, so both are gated on the API actually answering, and the
+# pickers go quiet when it does not.
+grep -Fq 'if (connection.key !== "running") return' Service.qml
+grep -Fq 'if (wanted === "" || connection.key !== "running" || delayProcess.running) return' Service.qml
+grep -Fq 'switchable: mihoro.connection.key === "running"' Panel.qml
+grep -Fq 'enabled: root.switchable' components/NodesSection.qml
+
+# A second pick while one is in flight is queued (latest wins), never dropped.
+grep -Fq '_queuedNode = { group: wantedGroup, name: wantedName }' Service.qml
+grep -Fq 'if (queued !== null) root.selectNode(queued.group, queued.name)' Service.qml
+
+# The optimistic overlay outlives the PUT: it clears when /proxies confirms it
+# or when the optimism deadline drops it — never right after the request, which
+# would snap the picker back to the stale `now`.
+sed -n '/id: optimismTimer/,/^  }/p' Service.qml | grep -Fq 'root.pendingNode = null'
+grep -Fq 'groups[i].now === root.pendingNode.name' Service.qml
+nodeSelect=$(sed -n '/id: nodeSelectProcess/,/^  }/p' Service.qml)
+[[ "$nodeSelect" != *$'root.pendingNode = null\n        root.refreshProxies()'* ]]
+
+# The watchdog is for polls, not actions: its 12s fuse is tied to the refresh
+# that armed it, not to an action's start, and would reap a healthy 10s delay
+# test. Actions bound themselves with curl's --max-time.
+watchdog=$(sed -n '/id: pollWatchdog/,/^  }/p' Service.qml)
+[[ "$watchdog" != *nodeSelectProcess* && "$watchdog" != *delayProcess* && "$watchdog" != *tunProcess* ]]
+
 # Surge-style delay tests: one group-scoped request, fastest-first ordering,
 # and delays shown in the picker.
 grep -Fq 'ClashApi.groupDelayCommand' Service.qml
@@ -117,7 +143,7 @@ grep -Fq 'text: "PROXY NODES"' components/NodesSection.qml
 # Delay colours come from the theme, never from literals.
 grep -Fq 'fastColor: systemTheme.green' Panel.qml
 grep -Fq 'slowColor: systemTheme.yellow' Panel.qml
-! grep -Eq '#[0-9a-fA-F]{6}' components/NodesSection.qml
+refute -Eq '#[0-9a-fA-F]{6}' components/NodesSection.qml
 
 # An open picker owns the keys — its search filter accepts r, u, and friends —
 # and `n` jumps the cursor to the section.
@@ -126,13 +152,29 @@ grep -Fq 'readonly property bool searchOpen' components/NodesSection.qml
 grep -Fq 'key === "n"' Panel.qml
 grep -Fq 'nodesSection.openGroup(target.substring(5))' Panel.qml
 
+# Every mouse-reachable action has a key: `d` tests the group under the cursor,
+# `u` toggles TUN, and the TUN row is a cursor target.
+grep -Fq 'key === "d"' Panel.qml
+grep -Fq 'key === "u"' Panel.qml
+grep -Fq 'mihoro.testGroupDelay(root.cursorTarget.substring(5))' Panel.qml
+grep -Fq 'list.push("tun")' Panel.qml
+grep -Fq 'tunCursor: root.cursorTarget === "tun"' Panel.qml
+grep -Fq 'hasCursor: root.tunCursor' components/ConnectionSection.qml
+
 # The TUN toggle patches the running core only; there is no tun key in
-# mihoro.toml to persist it into.
+# mihoro.toml to persist it into. A stopped core keeps its last liveConfigs, so
+# the switch goes quiet with the service rather than discarding clicks.
 grep -Fq 'ClashApi.setTunCommand' Service.qml
 grep -Fq 'function toggleTun()' Service.qml
 grep -Fq 'onToggled: root.service.toggleTun()' components/ConnectionSection.qml
 grep -Fq 'ToggleSwitch {' components/ConnectionSection.qml
-! grep -Fq 'tun' MihoroConfig.js
+grep -Fq 'interactive: root.live' components/ConnectionSection.qml
+refute -Fq 'tun' MihoroConfig.js
+# An authoritative TUN value that disagrees with the click still clears the
+# overlay once the PATCH has finished — otherwise a restart that restored
+# config.yaml would hold the toggle busy forever.
+grep -Fq '|| !tunProcess.running))' Service.qml
+sed -n '/id: optimismTimer/,/^  }/p' Service.qml | grep -Fq 'root.pendingTun = -1'
 
 # ---- subscriptions --------------------------------------------------------
 

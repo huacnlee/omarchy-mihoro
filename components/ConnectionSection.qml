@@ -16,6 +16,9 @@ Column {
   required property var service
   required property color textColor
   required property string panelFontFamily
+  property bool tunCursor: false
+
+  signal tunHovered(bool isHovered)
 
   readonly property bool live: service.apiState === "ok" && service.serviceActive
 
@@ -201,9 +204,15 @@ Column {
           ? root.service.pendingTun === 1
           : (root.service.liveConfigs ? root.service.liveConfigs.tunEnabled === true : false)
         busy: root.service.pendingTun !== -1
+        // A stopped core keeps its last liveConfigs, so the row would stay
+        // live-looking while every click is discarded by toggleTun's guard.
+        interactive: root.live
+        opacity: root.live ? 1.0 : 0.45
         cursorRing: false
+        hasCursor: root.tunCursor
         foreground: root.textColor
         onToggled: root.service.toggleTun()
+        onHovered: function(isHovered) { root.tunHovered(isHovered) }
 
         PanelToolTip {
           visible: tunSwitch.containsMouse
