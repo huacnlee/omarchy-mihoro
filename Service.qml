@@ -57,6 +57,11 @@ Item {
   property var trafficAnchor: null
   property var globalProxyOptions: []
   property string currentGlobalProxy: ""
+  // Selector groups other than GLOBAL (which the mode chips own), each with
+  // its nodes and their last measured delay. Filled from the same `/proxies`
+  // payload as the global options.
+  property var proxyGroups: []
+  property string testingDelayGroup: ""
 
   // ---- in-flight intent
   //
@@ -66,6 +71,10 @@ Item {
   property int desiredActive: -1
   property string pendingMode: ""
   property string pendingGlobalProxy: ""
+  // The node switch in flight, as `{group, name}`; null when nothing is.
+  property var pendingNode: null
+  // The TUN state asked for but not yet confirmed by a refresh; -1 means none.
+  property int pendingTun: -1
   property bool globalSelectionRequested: false
   property string actionKind: ""
   property string actionStatus: ""
@@ -222,6 +231,42 @@ Item {
   function cancelGlobalSelection() {
     globalSelectionRequested = false
     pendingGlobalProxy = ""
+  }
+
+  // Same endpoint as the GLOBAL picker, aimed at any Selector group — what
+  // `proxy-node` does from a terminal. The dropdown moves at once and a
+  // refresh confirms, exactly like a mode switch.
+  function selectNode(group, name) {
+    var wantedGroup = String(group || "")
+    var wantedName = String(name || "")
+    if (wantedGroup === "" || wantedName === "" || !canSwitchMode) return
+    if (nodeSelectProcess.running) return
+    pendingNode = { group: wantedGroup, name: wantedName }
+    lastError = ""
+    nodeSelectProcess.command = ClashApi.selectProxyCommand(apiBase, config.secret, wantedGroup, wantedName)
+    nodeSelectProcess.running = true
+  }
+
+  function testGroupDelay(group) {
+    var wanted = String(group || "")
+    if (wanted === "" || apiBase === "" || !serviceActive || delayProcess.running) return
+    testingDelayGroup = wanted
+    lastError = ""
+    delayProcess.command = ClashApi.groupDelayCommand(apiBase, config.secret, wanted)
+    delayProcess.running = true
+  }
+
+  // Runtime-only: the PATCH flips the running core's TUN device, and mihoro's
+  // TOML has no tun key to persist it into, so a restart restores whatever the
+  // generated config.yaml says. The toggle is offered only when the live core
+  // reports a tun field at all.
+  function toggleTun() {
+    if (connection.key !== "running" || tunProcess.running) return
+    if (!liveConfigs || liveConfigs.tunEnabled === null) return
+    pendingTun = liveConfigs.tunEnabled ? 0 : 1
+    lastError = ""
+    tunProcess.command = ClashApi.setTunCommand(apiBase, config.secret, pendingTun === 1)
+    tunProcess.running = true
   }
 
   function toggleService() {
@@ -586,6 +631,9 @@ Item {
       if (connectionsProcess.running) connectionsProcess.running = false
       if (proxiesProcess.running) proxiesProcess.running = false
       if (subscriptionsReadProcess.running) subscriptionsReadProcess.running = false
+      if (nodeSelectProcess.running) nodeSelectProcess.running = false
+      if (delayProcess.running) delayProcess.running = false
+      if (tunProcess.running) tunProcess.running = false
     }
   }
 
@@ -721,6 +769,8 @@ Item {
       root.liveConfigs = parsed
       // The core has spoken; stop overriding with the click.
       if (root.pendingMode !== "" && parsed.mode === root.pendingMode) root.pendingMode = ""
+      if (root.pendingTun !== -1 && parsed.tunEnabled !== null
+          && (parsed.tunEnabled === true) === (root.pendingTun === 1)) root.pendingTun = -1
     }
   }
 
@@ -754,6 +804,19 @@ Item {
       if (!parsed) return
       root.globalProxyOptions = parsed.options
       root.currentGlobalProxy = parsed.current
+      var groups = ClashApi.parseSelectorGroups(result.body)
+      if (groups) {
+        root.proxyGroups = groups
+        // The core has spoken; stop overriding with the click.
+        if (root.pendingNode !== null) {
+          for (var i = 0; i < groups.length; i++) {
+            if (groups[i].name === root.pendingNode.group && groups[i].now === root.pendingNode.name) {
+              root.pendingNode = null
+              break
+            }
+          }
+        }
+      }
     }
   }
 
@@ -783,6 +846,81 @@ Item {
         }
       }
       root.refreshProxies()
+    }
+  }
+
+  Process {
+    id: nodeSelectProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: nodeSelectOut; waitForEnd: true }
+    stderr: StdioCollector { id: nodeSelectErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      var result = ClashApi.classify(exitCode, nodeSelectOut.text, nodeSelectErr.text)
+      if (!result.ok) {
+        root.pendingNode = null
+        root.reportError(result.message)
+        return
+      }
+      var pending = root.pendingNode
+      if (pending !== null) {
+        root.actionStatus = pending.group + " → " + pending.name
+        actionStatusTimer.restart()
+      }
+      root.pendingNode = null
+      root.refreshProxies()
+    }
+  }
+
+  Process {
+    id: delayProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: delayOut; waitForEnd: true }
+    stderr: StdioCollector { id: delayErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      var group = root.testingDelayGroup
+      root.testingDelayGroup = ""
+      var result = ClashApi.classify(exitCode, delayOut.text, delayErr.text)
+      if (!result.ok) {
+        root.reportError(result.message)
+        return
+      }
+      var delays = ClashApi.parseGroupDelay(result.body)
+      if (!delays) return
+      // Absent from the map means the probe failed, and mihomo records that
+      // as delay 0 — write the same value so the two paths agree.
+      var groups = root.proxyGroups.slice()
+      for (var i = 0; i < groups.length; i++) {
+        if (groups[i].name !== group) continue
+        var nodes = groups[i].nodes.slice()
+        for (var j = 0; j < nodes.length; j++)
+          nodes[j] = { name: nodes[j].name, delay: delays[nodes[j].name] !== undefined ? delays[nodes[j].name] : 0 }
+        groups[i] = { name: groups[i].name, now: groups[i].now, nodes: nodes }
+        break
+      }
+      root.proxyGroups = groups
+      root.actionStatus = "Delays updated."
+      actionStatusTimer.restart()
+    }
+  }
+
+  Process {
+    id: tunProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: tunOut; waitForEnd: true }
+    stderr: StdioCollector { id: tunErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      var result = ClashApi.classify(exitCode, tunOut.text, tunErr.text)
+      if (!result.ok) {
+        root.pendingTun = -1
+        root.reportError(result.message)
+        return
+      }
+      root.actionStatus = root.pendingTun === 1 ? "TUN enabled." : "TUN disabled."
+      actionStatusTimer.restart()
+      root.refreshApi()
     }
   }
 

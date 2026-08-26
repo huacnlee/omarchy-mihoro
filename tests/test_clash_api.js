@@ -228,4 +228,53 @@ assert.strictEqual(legacy.anchor, null)
 
 assert.strictEqual(api.trafficRate(null, null, 1), null)
 
+// --------------------------------------------------------- selector groups
+//
+// What `proxy-node` reads from the same payload: every Selector group except
+// GLOBAL, each node carrying the last delay the core measured for it.
+
+const proxiesBody = JSON.stringify({
+  proxies: {
+    GLOBAL: { type: "Selector", now: "B", all: ["A", "B"] },
+    "Proxy": {
+      type: "Selector",
+      now: "A",
+      all: ["A", "B", "C"]
+    },
+    "Auto": { type: "URLTest", now: "A", all: ["A", "B"] },
+    "A": { type: "Shadowsocks", history: [{ time: "t1", delay: 120 }, { time: "t2", delay: 96 }] },
+    "B": { type: "Vmess", history: [] },
+    "C": { type: "Trojan", history: [{ time: "t3", delay: 0 }] }
+  }
+})
+
+const groups = api.parseSelectorGroups(proxiesBody)
+assert.strictEqual(groups.length, 1, "only non-GLOBAL Selector groups")
+assert.strictEqual(groups[0].name, "Proxy")
+assert.strictEqual(groups[0].now, "A")
+assert.strictEqual(groups[0].nodes.length, 3)
+assert.strictEqual(groups[0].nodes[0].name, "A")
+assert.strictEqual(groups[0].nodes[0].delay, 96, "the last history entry, not the first")
+assert.ok(Number.isNaN(groups[0].nodes[1].delay), "no history stays NaN, not 0")
+assert.strictEqual(groups[0].nodes[2].delay, 0, "a failed probe is delay 0")
+assert.strictEqual(api.parseSelectorGroups("{}"), null)
+assert.strictEqual(api.parseSelectorGroups("not json"), null)
+
+const groupDelay = api.parseGroupDelay('{"A": 96, "B": 1024}')
+assert.strictEqual(groupDelay.A, 96)
+assert.strictEqual(groupDelay.B, 1024)
+assert.strictEqual(groupDelay.C, undefined, "absent means the probe failed")
+assert.strictEqual(api.parseGroupDelay("not json"), null)
+
+const delayCmd = api.groupDelayCommand("http://127.0.0.1:9090", "s3cret", "My Group")
+assert.strictEqual(delayCmd[delayCmd.length - 1],
+  "http://127.0.0.1:9090/group/My%20Group/delay?url=http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&timeout=5000")
+assert.ok(delayCmd.some(arg => /Authorization: Bearer s3cret/.test(arg)))
+
+const tunOn = api.setTunCommand("http://127.0.0.1:9090", "", true)
+assert.strictEqual(tunOn[tunOn.length - 1], "http://127.0.0.1:9090/configs")
+assert.ok(tunOn.includes("PATCH"))
+assert.ok(tunOn.some(arg => arg === '{"tun":{"enable":true}}'))
+assert.ok(api.setTunCommand("http://127.0.0.1:9090", "", false).some(arg => arg === '{"tun":{"enable":false}}'))
+
 console.log("clash API tests passed")

@@ -44,6 +44,9 @@ edit.
   properties, so one theme change reaches every view.
 - The semantics are fixed: `Color.accent` is download, connected, and the
   current selection; `Color.urgent` is upload, failure, and destruction.
+  Node delays are the one place theme green and yellow appear (through
+  `SystemTheme`): fast and slow. The milliseconds or `timeout` are always
+  printed beside the colour, so the value never rides on the colour alone.
 - **Colour alone never carries state.** The selected subscription is a filled
   dot *and* a selected fill; some themes put the accent close to the foreground.
 
@@ -98,10 +101,14 @@ credential.
   visuals derive from `hasCursor` / `current`. That is what keeps exactly one
   highlight on screen whichever input is driving.
 - The panel keeps one flat list of targets rebuilt from service state, in screen
-  order. A panel this shallow does not need per-section cursors.
+  order. A panel this shallow does not need per-section cursors. Node groups are
+  `node:<group>` targets in that list, so the cursor walks power, modes, nodes,
+  and the subscription in the order they are drawn.
 - Right-edge action buttons are not cursor targets; the row they sit in is.
 - Every action the mouse can reach has a key: the letter for the page's own
   actions, digits for a list.
+- An open node picker owns the keys — its search filter accepts every letter the
+  panel binds — so the key catcher yields to it as it does to the URL editor.
 
 ## Credentials
 

@@ -509,4 +509,40 @@ assert.strictEqual(model.modeSelectionAction("direct", "rule"), "switch")
 assert.strictEqual(model.modeSelectionAction("rule", "rule"), "none")
 assert.strictEqual(model.modeSelectionAction("sideways", "rule"), "none")
 
+// -------------------------------------------------------------- node delays
+//
+// mihomo records a failed probe as delay 0, so 0 is a timeout — a node never
+// probed is NaN and reads as unknown. Neither may pass for fast.
+
+assert.strictEqual(model.delayState(1), "fast")
+assert.strictEqual(model.delayState(800), "fast")
+assert.strictEqual(model.delayState(801), "slow")
+assert.strictEqual(model.delayState(0), "timeout")
+assert.strictEqual(model.delayState(-3), "timeout")
+assert.strictEqual(model.delayState(NaN), "unknown")
+assert.strictEqual(model.delayState(undefined), "unknown")
+
+assert.strictEqual(model.formatDelay(96), "96ms")
+assert.strictEqual(model.formatDelay(96.4), "96ms")
+assert.strictEqual(model.formatDelay(0), "timeout")
+assert.strictEqual(model.formatDelay(NaN), "—")
+
+// Measured fastest-first, then the unprobed, then timeouts; ties and ranks
+// keep the subscription's own order so a quiet refresh never shuffles. The
+// model runs in a vm realm, so compare joined names rather than array identity.
+const sorted = model.sortNodesByDelay([
+  { name: "slow", delay: 1500 },
+  { name: "untested", delay: NaN },
+  { name: "fast-b", delay: 96 },
+  { name: "dead", delay: 0 },
+  { name: "fast-a", delay: 42 }
+])
+assert.strictEqual(sorted.map(node => node.name).join(","),
+  "fast-a,fast-b,slow,untested,dead")
+assert.strictEqual(model.sortNodesByDelay([]).length, 0)
+assert.strictEqual(model.sortNodesByDelay(null).length, 0)
+// Equal delays do not reorder.
+const tied = model.sortNodesByDelay([{ name: "x", delay: 100 }, { name: "y", delay: 100 }])
+assert.strictEqual(tied.map(node => node.name).join(","), "x,y")
+
 console.log("model tests passed")

@@ -167,19 +167,50 @@ Column {
       value: Model.formatPorts(root.service.config, root.service.liveConfigs)
     }
 
+    // With a tun field the state is switchable, so the row is a toggle; the
+    // read-only "—" remains for cores that report no tun config at all. The
+    // switch patches the running core only — mihoro.toml has no tun key, so a
+    // restart restores whatever config.yaml says, and the tooltip says so.
     StatRow {
       width: parent.width
+      visible: !root.service.liveConfigs || root.service.liveConfigs.tunEnabled === null
       textColor: root.textColor
       panelFontFamily: root.panelFontFamily
       label: "TUN"
-      value: {
-        var liveConfig = root.service.liveConfigs
-        if (!liveConfig || liveConfig.tunEnabled === null) return "—"
-        return liveConfig.tunEnabled ? "enabled" : "disabled"
+      value: "—"
+    }
+
+    Item {
+      width: parent.width
+      visible: root.service.liveConfigs && root.service.liveConfigs.tunEnabled !== null
+      implicitHeight: tunSwitch.implicitHeight
+
+      Text {
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        text: "TUN"
+        color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.55)
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.caption
       }
-      valueColor: root.service.liveConfigs && root.service.liveConfigs.tunEnabled === true
-        ? Color.accent
-        : root.textColor
+
+      ToggleSwitch {
+        id: tunSwitch
+        anchors.right: parent.right
+        checked: root.service.pendingTun !== -1
+          ? root.service.pendingTun === 1
+          : (root.service.liveConfigs ? root.service.liveConfigs.tunEnabled === true : false)
+        busy: root.service.pendingTun !== -1
+        cursorRing: false
+        foreground: root.textColor
+        onToggled: root.service.toggleTun()
+
+        PanelToolTip {
+          visible: tunSwitch.containsMouse
+          text: "Runtime only — a restart restores config.yaml"
+          fontFamily: root.panelFontFamily
+        }
+      }
     }
 
     StatRow {

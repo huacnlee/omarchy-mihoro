@@ -95,6 +95,45 @@ refute -Eq '#[0-9a-fA-F]{6}' components/Sparkline.qml
 grep -Fq 'label: "TUN"' components/ConnectionSection.qml
 grep -Fq 'root.service.liveConfigs.tunEnabled' components/ConnectionSection.qml
 
+# ---- proxy nodes ------------------------------------------------------------
+
+# The panel form of `proxy-node`: every Selector group except GLOBAL gets a
+# picker, fed from the same /proxies payload as the global options.
+grep -Fq 'NodesSection {' Panel.qml
+grep -Fq 'ClashApi.parseSelectorGroups' Service.qml
+grep -Fq 'key === "GLOBAL"' ClashApi.js
+# Node switching aims the same endpoint at any group, not just GLOBAL.
+grep -Fq 'ClashApi.selectProxyCommand(apiBase, config.secret, wantedGroup, wantedName)' Service.qml
+grep -Fq 'mihoro.selectNode(group, name)' Panel.qml
+grep -Fq 'function node(group: string, name: string): string' Panel.qml
+
+# Surge-style delay tests: one group-scoped request, fastest-first ordering,
+# and delays shown in the picker.
+grep -Fq 'ClashApi.groupDelayCommand' Service.qml
+grep -Fq 'mihoro.testGroupDelay(group)' Panel.qml
+grep -Fq 'Model.sortNodesByDelay' components/NodesSection.qml
+grep -Fq 'Model.formatDelay' components/NodesSection.qml
+grep -Fq 'text: "PROXY NODES"' components/NodesSection.qml
+# Delay colours come from the theme, never from literals.
+grep -Fq 'fastColor: systemTheme.green' Panel.qml
+grep -Fq 'slowColor: systemTheme.yellow' Panel.qml
+! grep -Eq '#[0-9a-fA-F]{6}' components/NodesSection.qml
+
+# An open picker owns the keys — its search filter accepts r, u, and friends —
+# and `n` jumps the cursor to the section.
+grep -Fq 'nodesSection.searchOpen' Panel.qml
+grep -Fq 'readonly property bool searchOpen' components/NodesSection.qml
+grep -Fq 'key === "n"' Panel.qml
+grep -Fq 'nodesSection.openGroup(target.substring(5))' Panel.qml
+
+# The TUN toggle patches the running core only; there is no tun key in
+# mihoro.toml to persist it into.
+grep -Fq 'ClashApi.setTunCommand' Service.qml
+grep -Fq 'function toggleTun()' Service.qml
+grep -Fq 'onToggled: root.service.toggleTun()' components/ConnectionSection.qml
+grep -Fq 'ToggleSwitch {' components/ConnectionSection.qml
+! grep -Fq 'tun' MihoroConfig.js
+
 # ---- subscriptions --------------------------------------------------------
 
 # URL subscriptions only: one remote config URL, fetched by the CLI.

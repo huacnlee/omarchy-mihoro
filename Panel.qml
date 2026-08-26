@@ -46,8 +46,21 @@ Panel {
     if (!mihoro.initialized) return ["setup"]
     var list = ["power"]
     if (mihoro.canSwitchMode) list.push("mode")
+    for (var i = 0; i < mihoro.proxyGroups.length; i++) list.push("node:" + mihoro.proxyGroups[i].name)
     list.push("subscription")
     return list
+  }
+
+  // Which group's picker the cursor is on, or -1. Group targets are named
+  // "node:<group>" so one flat list keeps power, modes, nodes, and the
+  // subscription in screen order.
+  readonly property int nodeCursorIndex: {
+    var target = cursorTarget
+    if (target.indexOf("node:") !== 0) return -1
+    var name = target.substring(5)
+    for (var i = 0; i < mihoro.proxyGroups.length; i++)
+      if (mihoro.proxyGroups[i].name === name) return i
+    return -1
   }
 
   readonly property string cursorTarget: {
@@ -88,6 +101,7 @@ Panel {
     var target = cursorTarget
     if (target === "power") mihoro.toggleService()
     else if (target === "mode") root.requestMode(Model.MODES[modeCursor].value)
+    else if (target.indexOf("node:") === 0) nodesSection.openGroup(target.substring(5))
     else if (target === "subscription") root.openSubscriptionPage()
     else if (target.indexOf("sub:") === 0) mihoro.selectSubscription(target.substring(4))
     else if (target === "add") subscription.beginAdd()
@@ -160,6 +174,16 @@ Panel {
     root.requestMode(Model.MODES[next].value)
   }
 
+  function focusNodes() {
+    for (var i = 0; i < targets.length; i++) {
+      if (String(targets[i]).indexOf("node:") === 0) {
+        cursorActive = true
+        cursorIndex = i
+        return
+      }
+    }
+  }
+
   Service {
     id: mihoro
     settings: root.settings
@@ -194,6 +218,11 @@ Panel {
       if (!Model.MODES.some(function(entry) { return entry.value === String(value).toLowerCase() }))
         return "expected one of rule, global, direct"
       mihoro.setMode(String(value).toLowerCase())
+      return "ok"
+    }
+    function node(group: string, name: string): string {
+      if (String(group) === "" || String(name) === "") return "expected a group and a node name"
+      mihoro.selectNode(String(group), String(name))
       return "ok"
     }
     function status(): string {
@@ -277,9 +306,10 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      // While the URL editor is open every key belongs to it, including the
-      // panel's single-letter shortcuts — a URL contains `r` and `u`.
-      blocked: subscription.editing
+      // While the URL editor or a node picker is open every key belongs to
+      // it, including the panel's single-letter shortcuts — a URL contains
+      // `r` and `u`, and a node filter can contain any of them.
+      blocked: subscription.editing || nodesSection.searchOpen
 
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
@@ -301,6 +331,7 @@ Panel {
         else if (root.panelPage === 1 && key === "t") mihoro.toggleService()
         else if (root.panelPage === 1 && key === "r") mihoro.refresh()
         else if (root.panelPage === 1 && key === "s") root.openSubscriptionPage()
+        else if (root.panelPage === 1 && key === "n") root.focusNodes()
         else if (root.panelPage === 1 && key === "i") root.openInstallPage()
         else if (root.panelPage === 1 && key === "m") root.cycleMode(1)
         else if (root.panelPage === 1 && key === "1") root.requestMode("rule")
@@ -526,6 +557,33 @@ Panel {
               root.cursorActive = true
               root.cursorIndex = root.targets.indexOf("mode")
               root.modeCursor = index
+            }
+          }
+
+          PanelSeparator {
+            visible: root.panelPage === 1 && mihoro.initialized && mihoro.proxyGroups.length > 0
+            foreground: root.foreground
+          }
+
+          NodesSection {
+            id: nodesSection
+            visible: root.panelPage === 1 && mihoro.initialized && mihoro.proxyGroups.length > 0
+            width: parent.width
+            textColor: root.foreground
+            panelFontFamily: root.fontFamily
+            fastColor: systemTheme.green
+            slowColor: systemTheme.yellow
+            groups: mihoro.proxyGroups
+            pendingNode: mihoro.pendingNode
+            testingGroup: mihoro.testingDelayGroup
+            cursorIndex: root.nodeCursorIndex
+            onNodeRequested: function(group, name) { mihoro.selectNode(group, name) }
+            onTestRequested: function(group) { mihoro.testGroupDelay(group) }
+            onDropdownHovered: function(index, isHovered) {
+              if (!isHovered) return
+              if (mihoro.proxyGroups.length === 0) return
+              root.cursorActive = true
+              root.cursorIndex = root.targets.indexOf("node:" + mihoro.proxyGroups[index].name)
             }
           }
 
