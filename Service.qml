@@ -75,6 +75,13 @@ Item {
   property var pendingNode: null
   // The TUN state asked for but not yet confirmed by a refresh; -1 means none.
   property int pendingTun: -1
+  // A GET /configs that started before a TUN PATCH finished can exit after it
+  // carrying the old value, and read as the authoritative disagreement that
+  // clears the overlay. The generation counter marks every completed PATCH;
+  // a configs response whose start predates the latest one is re-read instead
+  // of believed.
+  property int _tunPatchCount: 0
+  property int _configsTunGen: 0
   property bool globalSelectionRequested: false
   property string actionKind: ""
   property string actionStatus: ""
@@ -775,6 +782,7 @@ Item {
     command: []
     stdout: StdioCollector { id: configsOut; waitForEnd: true }
     stderr: StdioCollector { id: configsErr; waitForEnd: true }
+    onStarted: root._configsTunGen = root._tunPatchCount
     onExited: function(exitCode) {
       var result = ClashApi.classify(exitCode, configsOut.text, configsErr.text)
       if (!result.ok) return
@@ -783,14 +791,24 @@ Item {
       root.liveConfigs = parsed
       // The core has spoken; stop overriding with the click.
       if (root.pendingMode !== "" && parsed.mode === root.pendingMode) root.pendingMode = ""
-      // Same for TUN — including when the core disagrees, but only once the
-      // PATCH has finished: a restart can restore config.yaml's value, and an
-      // authoritative answer that never matches must not hold the toggle busy
-      // forever. While the PATCH is still in flight a disagreeing read is just
-      // the old state, so the overlay stays.
-      if (root.pendingTun !== -1 && parsed.tunEnabled !== null
-          && ((parsed.tunEnabled === true) === (root.pendingTun === 1) || !tunProcess.running))
+      // Same for TUN — but a disagreeing answer is only authoritative if this
+      // request started after the PATCH finished; one that straddled it is
+      // the old state and is re-read rather than believed. While the PATCH is
+      // still in flight the overlay stays either way: tunProcess.onExited
+      // triggers the confirming refresh.
+      if (root.pendingTun === -1 || parsed.tunEnabled === null) return
+      if ((parsed.tunEnabled === true) === (root.pendingTun === 1)) {
         root.pendingTun = -1
+        return
+      }
+      if (tunProcess.running) return
+      if (root._configsTunGen !== root._tunPatchCount) {
+        configsProcess.running = true
+        return
+      }
+      // A restart can restore config.yaml's value; an authoritative answer
+      // that never matches must not hold the toggle busy forever.
+      root.pendingTun = -1
     }
   }
 
@@ -946,6 +964,10 @@ Item {
       }
       root.actionStatus = root.pendingTun === 1 ? "TUN enabled." : "TUN disabled."
       actionStatusTimer.restart()
+      // Mark the PATCH before refreshing: a /configs already in flight from
+      // before it carries the old value, and the generation is how that
+      // response is told apart from an authoritative disagreement.
+      root._tunPatchCount += 1
       root.refreshApi()
     }
   }

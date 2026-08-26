@@ -172,8 +172,13 @@ grep -Fq 'interactive: root.live' components/ConnectionSection.qml
 refute -Fq 'tun' MihoroConfig.js
 # An authoritative TUN value that disagrees with the click still clears the
 # overlay once the PATCH has finished — otherwise a restart that restored
-# config.yaml would hold the toggle busy forever.
-grep -Fq '|| !tunProcess.running))' Service.qml
+# config.yaml would hold the toggle busy forever. But a /configs that started
+# before the PATCH carries the old value, so disagreement is only believed
+# from a request younger than the last completed PATCH; a straddling one is
+# re-read.
+grep -Fq 'root._tunPatchCount += 1' Service.qml
+grep -Fq 'onStarted: root._configsTunGen = root._tunPatchCount' Service.qml
+grep -Fq 'if (root._configsTunGen !== root._tunPatchCount) {' Service.qml
 sed -n '/id: optimismTimer/,/^  }/p' Service.qml | grep -Fq 'root.pendingTun = -1'
 
 # ---- subscriptions --------------------------------------------------------
