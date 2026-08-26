@@ -31,7 +31,16 @@ Panel {
   // state. A panel this shallow does not need per-section cursors: the order
   // here is the order on screen.
   readonly property var targets: {
-    if (root.panelPage === 2) return ["update", "edit"]
+    if (root.panelPage === 2) {
+      // The rows come first and in list order, so a row's index in the
+      // subscription list is its index here.
+      var subs = []
+      var items = mihoro.subscriptionList
+      for (var i = 0; i < items.length; i++) subs.push("sub:" + items[i].id)
+      subs.push("update")
+      subs.push("add")
+      return subs
+    }
     if (root.panelPage === 3) return ["install"]
     if (!mihoro.probe.mihoroInstalled) return ["setup"]
     if (!mihoro.initialized) return ["setup"]
@@ -80,14 +89,15 @@ Panel {
     if (target === "power") mihoro.toggleService()
     else if (target === "mode") root.requestMode(Model.MODES[modeCursor].value)
     else if (target === "subscription") root.openSubscriptionPage()
-    else if (target === "edit") subscription.beginEdit()
+    else if (target.indexOf("sub:") === 0) mihoro.selectSubscription(target.substring(4))
+    else if (target === "add") subscription.beginAdd()
     else if (target === "update") mihoro.updateSubscription()
     else if (target === "install") mihoro.openInstallationGuide()
     else if (target === "setup") {
       if (!mihoro.probe.mihoroInstalled) root.openInstallPage()
       else {
         root.openSubscriptionPage()
-        subscription.beginEdit()
+        subscription.beginAdd()
       }
     }
   }
@@ -102,6 +112,12 @@ Panel {
       mihoro.cancelGlobalSelection()
       if (action === "switch") mihoro.setMode(value)
     }
+  }
+
+  function selectSubscriptionAt(index) {
+    var items = mihoro.subscriptionList
+    if (index < 0 || index >= items.length) return
+    mihoro.selectSubscription(items[index].id)
   }
 
   function openSubscriptionPage() {
@@ -189,8 +205,26 @@ Panel {
         core: mihoro.mihomoVersion,
         connections: mihoro.connectionCount,
         subscription: mihoro.config.remoteConfigUrl !== "",
+        subscriptions: mihoro.subscriptionList.length,
         updatedAt: mihoro.probe.configMtime
       })
+    }
+    // Names and ids only. The URLs are bearer credentials and no caller needs
+    // them to pick one.
+    function subscriptions(): string {
+      return JSON.stringify(mihoro.subscriptionList.map(function(entry) {
+        return { id: entry.id, name: entry.name, active: entry.id === mihoro.activeSubscriptionId }
+      }))
+    }
+    function select(value: string): string {
+      var wanted = String(value || "").trim()
+      if (wanted === "") return "expected a subscription id or name"
+      var items = mihoro.subscriptionList
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].id !== wanted && items[i].name.toLowerCase() !== wanted.toLowerCase()) continue
+        return mihoro.selectSubscription(items[i].id) ? "ok" : "already selected"
+      }
+      return "no subscription named " + wanted
     }
   }
 
@@ -261,7 +295,9 @@ Panel {
       onTextKey: function(text) {
         var key = String(text || "").toLowerCase()
         if (root.panelPage === 2 && key === "u") mihoro.updateSubscription()
-        else if (root.panelPage === 2 && key === "e") subscription.beginEdit()
+        else if (root.panelPage === 2 && key === "e") subscription.beginEditActive()
+        else if (root.panelPage === 2 && key === "a") subscription.beginAdd()
+        else if (root.panelPage === 2 && key >= "1" && key <= "9") root.selectSubscriptionAt(Number(key) - 1)
         else if (root.panelPage === 1 && key === "t") mihoro.toggleService()
         else if (root.panelPage === 1 && key === "r") mihoro.refresh()
         else if (root.panelPage === 1 && key === "s") root.openSubscriptionPage()
@@ -364,24 +400,48 @@ Panel {
           }
 
           // One line for whatever the panel most needs to say: what it is
-          // doing, what went wrong, or why the proxy is not connected.
+          // doing, what went wrong, or why the proxy is not connected. Page two
+          // shows it too: a subscription that could not be switched or saved
+          // reports here, and a silent no-op reads as the panel ignoring the
+          // click.
           Item {
-            visible: root.panelPage === 1 && text !== ""
+            id: noticeBlock
+            visible: (root.panelPage === 1 || root.panelPage === 2) && text !== ""
             width: parent.width
-            implicitHeight: Math.max(noticeText.implicitHeight, noticeClose.visible ? noticeClose.implicitHeight : 0)
+            implicitHeight: Math.max(noticeText.implicitHeight,
+                noticeClose.visible ? noticeClose.implicitHeight : 0)
+              + (offersDiagnosis ? noticeDiagnose.implicitHeight + Style.space(4) : 0)
             property alias text: noticeText.text
+
+            // One condition, read by both the button and this block's height.
+            // Reading the button's own `visible` here instead would tie the
+            // block to a value QQuickItem propagates downward from it: the
+            // first time the button hid, the block would hide with it, and the
+            // child would then read false for good. That latch is why the
+            // button never appeared at all.
+            readonly property bool offersDiagnosis: mihoro.actionStatus === ""
+              && Model.canDiagnose(mihoro.lastErrorKind, mihoro.defaultAgent)
 
             Text {
               id: noticeText
               anchors.left: parent.left
+              anchors.top: parent.top
               anchors.right: noticeClose.visible ? noticeClose.left : parent.right
               anchors.rightMargin: noticeClose.visible ? Style.space(6) : 0
               text: mihoro.actionStatus !== "" ? mihoro.actionStatus
-                : (mihoro.lastError !== "" ? mihoro.lastError : mihoro.connection.detail)
+                : (mihoro.lastError !== "" ? mihoro.lastError
+                  : (root.panelPage === 1 ? mihoro.connection.detail : ""))
               color: mihoro.lastError !== "" && mihoro.actionStatus === "" ? root.urgent : root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               wrapMode: Text.WordWrap
+              // Three lines is what a failure gets before the panel is more
+              // error than panel. Qt clamps against the real width and the
+              // reader's own font size; counting characters here would be wrong
+              // the moment either changed. The message is already shortened and
+              // redacted upstream, so a clamp can only ever drop wording.
+              maximumLineCount: 3
+              elide: Text.ElideRight
             }
 
             Button {
@@ -392,8 +452,31 @@ Panel {
               text: "×"
               foreground: root.urgent
               bordered: false
-              fontSize: Style.font.body
+              fontSize: Style.font.bodySmall
               onClicked: mihoro.clearNotice()
+            }
+
+            // Three lines cannot hold why a mihoro command failed, and the
+            // panel can neither read a journal nor fetch a URL to find out.
+            // Handing the whole output to the user's own agent is the honest
+            // way to say more — offered as a button, never opened on its own: a
+            // failed update must not spawn a terminal nobody asked for.
+            Button {
+              id: noticeDiagnose
+              visible: noticeBlock.offersDiagnosis
+              anchors.left: parent.left
+              anchors.top: noticeText.bottom
+              anchors.topMargin: Style.space(4)
+              // `...` because it opens a terminal workflow rather than
+              // finishing the job here.
+              text: "Diagnose..."
+              // Not urgent: urgent is failure and destruction, and the failure
+              // is the line above. Not accent either, which means connected or
+              // selected. An offer reads as a plain action.
+              foreground: root.foreground
+              bordered: true
+              fontSize: Style.font.bodySmall
+              onClicked: mihoro.diagnose()
             }
           }
 
@@ -408,7 +491,7 @@ Panel {
             onInstallRequested: root.openInstallPage()
             onAddUrlRequested: {
               root.openSubscriptionPage()
-              subscription.beginEdit()
+              subscription.beginAdd()
             }
           }
 
@@ -468,8 +551,21 @@ Panel {
             panelFontFamily: root.fontFamily
             cursorTarget: root.cursorTarget
             onBackRequested: root.leaveSubscriptionPage()
-            onUrlCommitted: function(url) { mihoro.setSubscriptionUrl(url) }
+            onSelectRequested: function(id) { mihoro.selectSubscription(id) }
+            onCommitRequested: function(id, name, url) {
+              if (id === "") mihoro.addSubscription(name, url)
+              else mihoro.saveSubscription(id, name, url)
+            }
+            onRemoveRequested: function(id) { mihoro.removeSubscription(id) }
             onUpdateRequested: mihoro.updateSubscription()
+            onRowHovered: function(index, isHovered) {
+              if (!isHovered) {
+                root.cursorActive = false
+                return
+              }
+              root.cursorActive = true
+              root.cursorIndex = index
+            }
             onEditingChanged: if (!editing) Qt.callLater(function() { keyCatcher.forceActiveFocus() })
           }
 

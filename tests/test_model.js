@@ -208,6 +208,95 @@ assert.strictEqual(model.stageFailureMessage("", "fallback"), "fallback")
 assert.strictEqual(model.stageFailureMessage("something went sideways\n", "fallback"),
   "something went sideways")
 
+// A failure message is a bearer credential hazard and a length hazard: mihoro
+// echoes the URL it was given, and serde echoes the whole body it could not
+// parse. Both land in a notice line that has three lines to say something
+// useful in.
+
+// mihoro reports a network failure by quoting the subscription URL twice. The
+// token is the whole of the authentication, so the host survives and the rest
+// does not.
+const networkFailure = '  ✗ config: failed to GET from ' +
+  "'https://sub.example.com/api/v1/client/subscribe?token=SECRET123': " +
+  'error sending request for url ' +
+  '(https://sub.example.com/api/v1/client/subscribe?token=SECRET123): ' +
+  'client error (Connect): unexpected EOF\n'
+const networkMessage = model.stageFailureMessage(networkFailure, "fallback")
+assert.ok(!networkMessage.includes("SECRET123"), networkMessage)
+assert.ok(!networkMessage.includes("/api/v1/client/subscribe"), networkMessage)
+assert.ok(networkMessage.includes("sub.example.com"), networkMessage)
+assert.ok(networkMessage.includes("failed to GET"), networkMessage)
+
+// A subscription that answers with a node list rather than a Clash config makes
+// serde quote the entire body back. The quoted payload carries the account's
+// UUID, and at 6KB it is neither readable nor renderable.
+const echoedBody = Array.from({ length: 40 }, (_, i) =>
+  "hysteria2://3ec68822-94e5-433b-938e-399052b1d557@sg" + i +
+  ".example.com:8443/?insecure=1&sni=localhost#node" + i).join(" ")
+const bodyFailure = '  ✗ config: invalid type: string "' + echoedBody +
+  '", expected struct MihomoYamlConfig\n'
+const bodyMessage = model.stageFailureMessage(bodyFailure, "fallback")
+assert.ok(!bodyMessage.includes("3ec68822"), bodyMessage)
+assert.ok(bodyMessage.length <= 240, "length " + bodyMessage.length)
+// The ends carry the meaning; only the quoted middle is worth nothing.
+assert.ok(bodyMessage.startsWith("config: invalid type: string"), bodyMessage)
+assert.ok(bodyMessage.includes("expected struct MihomoYamlConfig"), bodyMessage)
+
+// A quoted string short enough to read is left alone: collapsing "proxies"
+// would throw away the only part that says what is missing.
+assert.strictEqual(
+  model.stageFailureMessage('  ✗ config: missing field "proxies"\n', "fallback"),
+  'config: missing field "proxies"')
+
+// Nothing quoted and nothing to redact still cannot run past the cap.
+const longPlain = model.stageFailureMessage("  ✗ config: " + "x".repeat(500) + "\n", "fallback")
+assert.ok(longPlain.length <= 240, "length " + longPlain.length)
+assert.ok(longPlain.endsWith("…"), longPlain)
+
+// ------------------------------------------------------------- AI diagnosis
+//
+// A failed mihoro command is the one error worth handing to an agent: the
+// output is long, and the cause is usually somewhere the panel cannot look.
+
+assert.deepStrictEqual(Array.from(model.defaultAgentCommand()), ["omarchy-default-agent"])
+
+assert.strictEqual(model.failureLogPath("/home/u"),
+  "/home/u/.local/state/omarchy/mihoro/last-failure.log")
+
+// The log holds a server's answer verbatim, so it is written the way the
+// subscription store is: 0600, through a temporary file in the same directory.
+const logPath = model.failureLogPath("/home/u")
+const logCommand = model.failureLogWriteCommand(logPath)
+assert.strictEqual(logCommand[0], "bash")
+assert.strictEqual(logCommand[1], "-c")
+assert.ok(logCommand[2].includes("chmod 600"), logCommand[2])
+assert.ok(logCommand[2].includes("mkdir -p"), logCommand[2])
+assert.strictEqual(logCommand[logCommand.length - 1], logPath)
+
+// The prompt travels as argv, where the process list can read it. It carries
+// paths and the command that failed — never the output, and never the URL.
+const updatePrompt = model.diagnosePrompt("update", logPath, "/home/u/.config/mihoro.toml")
+assert.ok(updatePrompt.includes("mihoro update --config"), updatePrompt)
+assert.ok(updatePrompt.includes(logPath), updatePrompt)
+assert.ok(updatePrompt.includes("/home/u/.config/mihoro.toml"), updatePrompt)
+assert.ok(!/https?:\/\//.test(updatePrompt), updatePrompt)
+
+// Each kind names the command the user actually ran, so the agent is not left
+// guessing which of the three failed.
+assert.ok(model.diagnosePrompt("init", logPath, "/c").includes("mihoro init -y"))
+assert.ok(model.diagnosePrompt("apply", logPath, "/c").includes("mihoro apply"))
+
+const diagnose = model.diagnoseCommand(updatePrompt)
+assert.deepStrictEqual([diagnose[0], diagnose[1]], ["omarchy-agent", "--prompt"])
+assert.strictEqual(diagnose[2], updatePrompt)
+
+// Only a staged mihoro command earns the button. A rejected URL is the user's
+// to fix, and a failed write is not something an agent can read a log about.
+assert.strictEqual(model.canDiagnose("update", "claude"), true)
+assert.strictEqual(model.canDiagnose("update", ""), false)
+assert.strictEqual(model.canDiagnose("", "claude"), false)
+assert.strictEqual(model.canDiagnose("validation", "claude"), false)
+
 // ------------------------------------------------------------ subscriptions
 
 assert.strictEqual(model.subscriptionUrlError("https://example.com/sub"), "")

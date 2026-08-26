@@ -83,7 +83,7 @@ Item {
         }
       }
       MenuRow {
-        text: "Subscription..."
+        text: "Subscriptions..."
         enabled: root.canOpenSubscription
         onActivated: {
           menu.close()

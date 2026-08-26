@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "MihoroConfig.js" as MihoroConfig
+import "Subscriptions.js" as Subscriptions
 import "ClashApi.js" as ClashApi
 import "Model.js" as Model
 
@@ -27,6 +28,13 @@ Item {
   property var config: MihoroConfig.defaults()
   property string configRaw: ""
   property bool configLoaded: false
+
+  // ---- the panel's own subscription list
+  //
+  // mihoro holds one subscription at a time, so the list is the panel's and
+  // only the selected entry reaches mihoro.toml. See Subscriptions.js.
+  property var subscriptions: Subscriptions.defaults()
+  property bool subscriptionsLoaded: false
 
   // ---- what mihomo's API reports
   property string apiState: "unknown"       // ok | unauthorized | unreachable | disabled | unknown
@@ -63,6 +71,30 @@ Item {
   property string actionStatus: ""
   property string lastError: ""
 
+  // The one error worth handing to an agent is a staged mihoro command that
+  // failed: its output runs to kilobytes and its cause is usually somewhere the
+  // panel cannot look. A rejected URL is the user's to fix and a failed write is
+  // a permissions problem, so neither sets this.
+  //
+  // The kind travels with the message, never outliving it — see reportError.
+  property string lastErrorKind: ""
+  property string lastFailureOutput: ""
+
+  // Empty until the user picks one; Omarchy ships with no default agent, and
+  // there is nothing to offer until there is something to open.
+  property string defaultAgent: ""
+
+  onLastErrorChanged: if (lastError === "") lastErrorKind = ""
+
+  // Every error that is not a failed mihoro command reports through here, so it
+  // takes the diagnosis offer down with it. Without this the button would
+  // survive its own failure and point the agent at a log the user has already
+  // moved past.
+  function reportError(message) {
+    lastErrorKind = ""
+    lastError = message
+  }
+
   readonly property int refreshIntervalSec: {
     var raw = settings ? settings.refreshIntervalSec : undefined
     var value = parseInt(String(raw === undefined || raw === null ? 30 : raw), 10)
@@ -72,6 +104,7 @@ Item {
 
   readonly property string home: Quickshell.env("HOME") || ""
   readonly property string mihoroConfigPath: MihoroConfig.configPath(home)
+  readonly property string subscriptionsPath: Subscriptions.storePath(home)
   readonly property string mihomoConfigPath: MihoroConfig.mihomoConfigPath(config.mihomoConfigRoot, home)
   readonly property string mihomoBinaryPath: MihoroConfig.mihomoBinaryPath(config.mihomoBinaryPath, home)
   readonly property string apiBase: ClashApi.baseUrl(config.externalController)
@@ -81,6 +114,8 @@ Item {
   readonly property bool serviceActive: probe.activeState === "active"
   readonly property bool active: desiredActive === -1 ? connection.active : (desiredActive === 1)
   readonly property bool initialized: probe.mihoroInstalled && probe.configPresent
+  readonly property var subscriptionList: Subscriptions.list(subscriptions)
+  readonly property string activeSubscriptionId: String(subscriptions.activeId || "")
   readonly property bool canSwitchMode: Model.canSwitchMode(probe, apiState)
   readonly property string modeHint: Model.modeHint(probe, apiState)
 
@@ -92,7 +127,12 @@ Item {
   readonly property bool busy: probeProcess.running || configReadProcess.running
     || actionProcess.running || modeProcess.running || proxySelectProcess.running
     || configWriteProcess.running || guideProcess.running
+    || subscriptionsReadProcess.running || subscriptionsWriteProcess.running
   readonly property bool actionRunning: actionProcess.running
+  // Narrower than `busy`: only the writes and the CLI run that a subscription
+  // change sets off. The refresh poll must not grey the list out every 30s.
+  readonly property bool applying: configWriteProcess.running || actionProcess.running
+    || subscriptionsWriteProcess.running
   readonly property bool copyingProxyExport: proxyExportProcess.running || clipboardProcess.running
 
   signal actionFinished(string kind, bool ok)
@@ -233,17 +273,157 @@ Item {
     lastError = ""
   }
 
-  // Setting the URL and pulling it are one gesture: writing the file alone
-  // would leave the panel showing a subscription that nothing has fetched.
-  function setSubscriptionUrl(url) {
+  // ---------------------------------------------------------- subscriptions
+  //
+  // The list is the panel's; mihoro.toml holds whichever entry is selected.
+  // Every change here does both — the store keeps the entry, and the selected
+  // URL goes on to mihoro.toml so `mihoro update --config` fetches it. A store
+  // that named a subscription mihoro had never been told about would describe
+  // one the proxy is not using.
+
+  function loadSubscriptions() {
+    if (subscriptionsReadProcess.running) return
+    subscriptionsReadProcess.command = Subscriptions.readCommand(subscriptionsPath)
+    subscriptionsReadProcess.running = true
+  }
+
+  // mihoro.toml wins: it is what the core is actually using. A URL that arrived
+  // by `mihoro init` or a hand edit is taken into the list rather than being
+  // overwritten by whatever the panel last had selected.
+  function reconcileSubscriptions() {
+    if (!subscriptionsLoaded || !configLoaded) return
+    // Not while a switch is in flight: mihoro.toml still holds the old URL, and
+    // adopting it would drag the selection back to where it just came from.
+    if (configWriteProcess.running || _afterWrite !== "") return
+    var result = Subscriptions.adopt(subscriptions, config.remoteConfigUrl)
+    if (!result.changed) return
+    subscriptions = result.store
+    writeSubscriptions()
+  }
+
+  // Writes the selected subscription into mihoro.toml and pulls it. With
+  // nothing selected the URL is cleared instead, so the panel reporting "not
+  // set up" and an empty list say the same thing.
+  function applyActiveSubscription() {
+    var url = Subscriptions.activeUrl(subscriptions)
+    if (url === "") {
+      if (String(config.remoteConfigUrl || "") !== "") writeConfig({ remoteConfigUrl: "" }, "")
+      return
+    }
+    writeConfig({ remoteConfigUrl: url }, probe.configPresent && probe.unitLoaded ? "update" : "init")
+  }
+
+  // Two entries holding the same URL are one subscription under two names, and
+  // mihoro.toml — which stores a URL, not an entry — cannot tell them apart. The
+  // second one is refused where it is typed rather than left to look like a
+  // separate subscription that never becomes the selected one.
+  function duplicateError(url, exceptId) {
+    var clash = Subscriptions.duplicateOf(subscriptions, url, exceptId)
+    return clash ? "That URL is already saved as \"" + clash.name + "\"." : ""
+  }
+
+  function selectSubscription(id) {
+    if (applying) return false
+    var entry = Subscriptions.find(subscriptions, id)
+    if (!entry || entry.id === activeSubscriptionId) return false
+    lastError = ""
+    subscriptions = Subscriptions.select(subscriptions, entry.id).store
+    writeSubscriptions()
+    applyActiveSubscription()
+    return true
+  }
+
+  // A new subscription is the one you meant to use, so it is selected and
+  // fetched on the spot — the same single gesture the first URL always was.
+  function addSubscription(name, url) {
+    if (applying) return false
     var text = String(url || "").trim()
-    if (Model.subscriptionUrlError(text) !== "") {
-      lastError = Model.subscriptionUrlError(text)
+    var problem = Model.subscriptionUrlError(text)
+    if (problem === "") problem = Subscriptions.nameError(name)
+    if (problem === "") problem = duplicateError(text, "")
+    if (problem !== "") {
+      reportError(problem)
       return false
     }
     lastError = ""
-    writeConfig({ remoteConfigUrl: text }, probe.configPresent && probe.unitLoaded ? "update" : "init")
+    var result = Subscriptions.add(subscriptions, name, text)
+    subscriptions = Subscriptions.select(result.store, result.id).store
+    writeSubscriptions()
+    applyActiveSubscription()
     return true
+  }
+
+  function saveSubscription(id, name, url) {
+    if (applying) return false
+    var entry = Subscriptions.find(subscriptions, id)
+    if (!entry) return false
+    var text = String(url || "").trim()
+    var problem = Model.subscriptionUrlError(text)
+    if (problem === "") problem = Subscriptions.nameError(name)
+    if (problem === "") problem = duplicateError(text, entry.id)
+    if (problem !== "") {
+      reportError(problem)
+      return false
+    }
+    lastError = ""
+    var urlChanged = text !== entry.url
+    subscriptions = Subscriptions.save(subscriptions, entry.id, name, text).store
+    writeSubscriptions()
+    // Renaming is not something mihoro has an opinion about; a new URL on the
+    // selected entry is, and it has to be fetched before the panel claims it.
+    if (urlChanged && entry.id === activeSubscriptionId) applyActiveSubscription()
+    return true
+  }
+
+  function removeSubscription(id) {
+    if (applying) return false
+    var entry = Subscriptions.find(subscriptions, id)
+    if (!entry) return false
+    lastError = ""
+    var wasActive = entry.id === activeSubscriptionId
+    subscriptions = Subscriptions.remove(subscriptions, entry.id).store
+    writeSubscriptions()
+    // Removing the selected one falls through to whatever `remove` selected in
+    // its place, and to clearing the URL when it was the last one — the list is
+    // the set of subscriptions, so an empty list means none is configured.
+    if (wasActive) applyActiveSubscription()
+    return true
+  }
+
+  function writeSubscriptions() {
+    if (subscriptionsWriteProcess.running) {
+      // The store in hand is always the whole file, so a queued write does not
+      // need to remember what it was for — it just re-serializes on the way out.
+      _subscriptionsQueued = true
+      return
+    }
+    _subscriptionsQueued = false
+    _pendingSubscriptions = Subscriptions.serialize(subscriptions)
+    subscriptionsWriteProcess.command = Subscriptions.writeCommand(subscriptionsPath)
+    // Re-armed every write: `onStarted` closes stdin to give `cat` its EOF.
+    subscriptionsWriteProcess.stdinEnabled = true
+    subscriptionsWriteProcess.running = true
+  }
+
+  // Checked per open rather than once at startup, so choosing an agent takes
+  // effect without restarting the shell. omarchy-crash-watch re-checks per crash
+  // for the same reason.
+  function refreshDefaultAgent() {
+    if (defaultAgentProcess.running) return
+    defaultAgentProcess.command = Model.defaultAgentCommand()
+    defaultAgentProcess.running = true
+  }
+
+  // The output quotes back the URL it was given and whatever the server
+  // answered with, so it goes to a 0600 file rather than into the prompt:
+  // `--prompt` becomes argv, and the process list is world-readable.
+  function diagnose() {
+    if (!Model.canDiagnose(lastErrorKind, defaultAgent)) return
+    if (failureLogWriteProcess.running || diagnoseProcess.running) return
+    _pendingFailureLog = lastFailureOutput
+    failureLogWriteProcess.command = Model.failureLogWriteCommand(Model.failureLogPath(home))
+    failureLogWriteProcess.stdinEnabled = true
+    failureLogWriteProcess.running = true
   }
 
   function runAction(kind, command, label) {
@@ -264,6 +444,9 @@ Item {
   property string _actionOutput: ""
   property string _actionError: ""
   property string _pendingClipboard: ""
+  property string _pendingSubscriptions: ""
+  property string _pendingFailureLog: ""
+  property bool _subscriptionsQueued: false
 
   function writeConfig(changes, thenAction) {
     if (configWriteProcess.running) return false
@@ -294,6 +477,11 @@ Item {
       runAction("update", Model.updateConfigCommand(), "Fetching subscription…")
     } else if (next === "init") {
       runAction("init", Model.initCommand(), "Setting up mihoro…")
+    } else {
+      // Nothing to run — the last subscription was removed and the URL cleared.
+      // Re-probe anyway, or the panel goes on reporting the setup it just
+      // deleted until the next poll comes round.
+      settleTimer.restart()
     }
   }
 
@@ -320,6 +508,7 @@ Item {
     if (panelOpen) {
       refresh()
       refreshConnections()
+      refreshDefaultAgent()
     }
     syncTraffic()
   }
@@ -329,6 +518,8 @@ Item {
     trafficProcess.running = false
     syncTraffic()
   }
+
+  Component.onCompleted: loadSubscriptions()
 
   Timer {
     id: refreshTimer
@@ -394,6 +585,7 @@ Item {
       if (configsProcess.running) configsProcess.running = false
       if (connectionsProcess.running) connectionsProcess.running = false
       if (proxiesProcess.running) proxiesProcess.running = false
+      if (subscriptionsReadProcess.running) subscriptionsReadProcess.running = false
     }
   }
 
@@ -409,9 +601,54 @@ Item {
         actionStatusTimer.restart()
       } else {
         root.actionStatus = ""
-        root.lastError = "Could not open the Mihoro installation guide."
+        root.reportError("Could not open the Mihoro installation guide.")
       }
       settleTimer.restart()
+    }
+  }
+
+  Process {
+    id: defaultAgentProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: defaultAgentOut; waitForEnd: true }
+    onExited: function(exitCode) {
+      root.defaultAgent = exitCode === 0 ? String(defaultAgentOut.text || "").trim() : ""
+    }
+  }
+
+  Process {
+    id: failureLogWriteProcess
+    running: false
+    command: []
+    // Set per write, not bound: `onStarted` closes stdin, and a binding would
+    // fight that.
+    stdinEnabled: false
+    onStarted: {
+      failureLogWriteProcess.write(root._pendingFailureLog)
+      root._pendingFailureLog = ""
+      failureLogWriteProcess.stdinEnabled = false
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        root.reportError("Could not save the failure log.")
+        return
+      }
+      diagnoseProcess.command = Model.diagnoseCommand(
+        Model.diagnosePrompt(root.lastErrorKind, Model.failureLogPath(root.home),
+          root.mihoroConfigPath))
+      diagnoseProcess.running = true
+    }
+  }
+
+  Process {
+    id: diagnoseProcess
+    running: false
+    command: []
+    onExited: function(exitCode) {
+      // omarchy-agent detaches the terminal, so a non-zero exit is the launch
+      // itself failing rather than the agent finishing.
+      if (exitCode !== 0) root.reportError("Could not open the diagnosis.")
     }
   }
 
@@ -424,6 +661,7 @@ Item {
       root.configRaw = String(configOut.text || "")
       root.config = MihoroConfig.parse(root.configRaw)
       root.configLoaded = true
+      root.reconcileSubscriptions()
       root.refreshProbe()
     }
   }
@@ -529,7 +767,7 @@ Item {
       var result = ClashApi.classify(exitCode, proxySelectOut.text, proxySelectErr.text)
       if (!result.ok) {
         root.cancelGlobalSelection()
-        root.lastError = result.message
+        root.reportError(result.message)
         return
       }
       var selected = root.pendingGlobalProxy
@@ -604,7 +842,7 @@ Item {
       if (exitCode !== 0 || root._pendingClipboard.trim() === "") {
         root._pendingClipboard = ""
         root.actionStatus = ""
-        root.lastError = "Could not export proxy info."
+        root.reportError("Could not export proxy info.")
         return
       }
       clipboardProcess.stdinEnabled = true
@@ -624,7 +862,8 @@ Item {
     }
     onExited: function(exitCode) {
       root.actionStatus = exitCode === 0 ? "Proxy export copied." : ""
-      root.lastError = exitCode === 0 ? "" : "Could not copy proxy info."
+      if (exitCode === 0) root.lastError = ""
+      else root.reportError("Could not copy proxy info.")
       if (exitCode === 0) actionStatusTimer.restart()
     }
   }
@@ -648,12 +887,52 @@ Item {
       if (exitCode !== 0) {
         root._afterWrite = ""
         root.pendingMode = ""
-        root.lastError = Model.elide(writeErr.text || "Could not write mihoro.toml.", 160)
+        root.reportError(Model.noticeMessage(writeErr.text || "Could not write mihoro.toml."))
         // The file on disk is not what the panel just assumed it was.
         root.refresh()
         return
       }
       root.runAfterWrite()
+    }
+  }
+
+  Process {
+    id: subscriptionsReadProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: subscriptionsOut; waitForEnd: true }
+    onExited: {
+      root.subscriptions = Subscriptions.parse(subscriptionsOut.text)
+      root.subscriptionsLoaded = true
+      // First run, or an upgrade from the single-URL panel: whatever
+      // mihoro.toml already points at becomes the first entry in the list.
+      root.reconcileSubscriptions()
+    }
+  }
+
+  Process {
+    id: subscriptionsWriteProcess
+    running: false
+    command: []
+    // Set per write, not bound: `onStarted` closes stdin, and a binding would
+    // fight that.
+    stdinEnabled: false
+    stderr: StdioCollector { id: subscriptionsWriteErr; waitForEnd: true }
+    onStarted: {
+      subscriptionsWriteProcess.write(root._pendingSubscriptions)
+      root._pendingSubscriptions = ""
+      subscriptionsWriteProcess.stdinEnabled = false
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        root._subscriptionsQueued = false
+        root.reportError(Model.noticeMessage(
+          subscriptionsWriteErr.text || "Could not save the subscription list."))
+        // What is on screen is not what is on disk; the file is the truth.
+        root.loadSubscriptions()
+        return
+      }
+      if (root._subscriptionsQueued) root.writeSubscriptions()
     }
   }
 
@@ -704,9 +983,12 @@ Item {
         root.desiredActive = -1
         root.pendingMode = ""
         root.actionStatus = ""
-        root.lastError = Model.stageFailureMessage(
-          root._actionOutput + "\n" + root._actionError,
+        // The notice gets a message it can render; the log keeps the whole of
+        // what was printed, for an agent that can read more than three lines.
+        root.lastFailureOutput = root._actionOutput + "\n" + root._actionError
+        root.lastError = Model.stageFailureMessage(root.lastFailureOutput,
           "mihoro " + kind + " failed.")
+        root.lastErrorKind = kind
       }
       root.actionKind = ""
       root.actionFinished(kind, ok)

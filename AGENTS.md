@@ -1,16 +1,23 @@
 # Project working agreements
 
-## UI colors
+## The surface
 
-- Use Omarchy system/theme colors from `qs.Commons.Color` and shared `Style` helpers.
-- Do not hard-code hex, RGB, or named display colors in QML components.
-- Derived shades may use `Qt.darker`, `Qt.lighter`, or `Qt.rgba` with a system color as their source.
-- Reusable controls must accept or inherit the relevant foreground/accent colors so they remain correct across themes.
+`DESIGN.md` is the design standard — icons, colour, labels, the panel's shape,
+and what may show a credential. Read it before touching a component, and change
+it in the same commit as the behaviour it describes. It exists because those
+rules were being re-derived per component, and a row ended up carrying two icons
+drawn on two different grids.
 
-## UI labels
+The two that come up most:
 
+- Colours come from `qs.Commons.Color` and the shared `Style` helpers. No
+  hard-coded hex, RGB, or named display colours. Derive shades with `Qt.darker`,
+  `Qt.lighter`, or `Qt.rgba` over a theme colour, and let reusable controls
+  accept or inherit the relevant foreground/accent colours so they stay correct
+  across themes.
 - Suffix button and menu labels with `...` when activating them opens a dialog,
-  editor, terminal workflow, or secondary page instead of completing the action immediately.
+  editor, terminal workflow, or secondary page instead of completing the action
+  immediately.
 
 ## Verification
 

@@ -164,6 +164,39 @@ function parseStageLine(line) {
   return { kind: "other", name: "", detail: trimmed }
 }
 
+// A failure message quotes back what mihoro was given and what it got: the
+// subscription URL on a network error, the whole response body when it could
+// not be parsed. Both are hostile to a notice line — the URL is the whole of
+// the authentication, and a body runs to kilobytes on one line.
+
+// Only the host survives. It is what identifies the subscription when
+// diagnosing, and it is the part that is not a credential.
+function redactUrls(text) {
+  return String(text === undefined || text === null ? "" : text)
+    .replace(/https?:\/\/[^\s'"()<>]+/g, function (url) {
+      var rest = url.replace(/^https?:\/\//, "")
+      var cut = rest.search(/[\/?#]/)
+      return cut < 0 ? rest : rest.substring(0, cut) + "/…"
+    })
+}
+
+// A quoted run long enough to be a payload rather than a field name says
+// nothing a reader can use, and truncation would leave part of it on screen.
+// Short quotes are the ones carrying the meaning — `missing field "proxies"`.
+function collapseQuoted(text, max) {
+  var limit = Number(max) || 60
+  return String(text === undefined || text === null ? "" : text)
+    .replace(/"([^"]*)"/g, function (whole, inner) {
+      return inner.length > limit ? '"…"' : whole
+    })
+}
+
+// Redact before shortening, always: eliding first could stop halfway through a
+// token and leave the front of it on screen.
+function noticeMessage(text) {
+  return elide(collapseQuoted(redactUrls(text), 60), 240)
+}
+
 // The message to show when a staged command exits non-zero. A failed stage is
 // far more useful than the exit code, so it wins over stderr.
 function stageFailureMessage(output, fallback) {
@@ -171,14 +204,15 @@ function stageFailureMessage(output, fallback) {
   for (var i = 0; i < lines.length; i++) {
     var parsed = parseStageLine(lines[i])
     if (parsed && parsed.kind === "fail") {
-      if (parsed.name !== "" && parsed.detail !== "") return parsed.name + ": " + parsed.detail
-      return parsed.detail !== "" ? parsed.detail : parsed.name
+      var named = parsed.name !== "" && parsed.detail !== ""
+      return noticeMessage(named ? parsed.name + ": " + parsed.detail
+        : (parsed.detail !== "" ? parsed.detail : parsed.name))
     }
   }
   var trimmed = stripAnsi(output).trim()
   if (trimmed !== "") {
     var last = trimmed.split("\n")
-    return elide(last[last.length - 1].trim(), 160)
+    return noticeMessage(last[last.length - 1].trim())
   }
   return String(fallback || "mihoro reported a failure.")
 }
@@ -187,6 +221,90 @@ function elide(text, max) {
   var value = String(text === undefined || text === null ? "" : text).replace(/\s+/g, " ").trim()
   var limit = Number(max) || 80
   return value.length > limit ? value.substring(0, limit - 1) + "…" : value
+}
+
+// -------------------------------------------------------------- AI diagnosis
+//
+// Omarchy's crash watcher already answers the question of how a shell offers a
+// diagnosis: check that a default agent has been chosen, gather the facts, and
+// point the agent at them instead of pasting them into the prompt. Both halves
+// matter here — `omarchy-default-agent` prints nothing until the user picks
+// one, and a button that opens nothing explains nothing.
+
+// Only a staged mihoro command qualifies. A rejected URL is the user's to fix
+// and an agent would only repeat the validation message back; a failed write is
+// a permissions problem with no output worth reading.
+var DIAGNOSABLE = [
+  { kind: "update", command: "mihoro update --config" },
+  { kind: "init",   command: "mihoro init -y" },
+  { kind: "apply",  command: "mihoro apply" }
+]
+
+function diagnosableCommand(kind) {
+  var key = String(kind === undefined || kind === null ? "" : kind)
+  for (var i = 0; i < DIAGNOSABLE.length; i++)
+    if (DIAGNOSABLE[i].kind === key) return DIAGNOSABLE[i].command
+  return ""
+}
+
+function defaultAgentCommand() { return ["omarchy-default-agent"] }
+
+function canDiagnose(kind, agent) {
+  return String(agent || "") !== "" && diagnosableCommand(kind) !== ""
+}
+
+function failureLogPath(home) {
+  return String(home || "") + "/.local/state/omarchy/mihoro/last-failure.log"
+}
+
+// Written the way the subscription store is, and for the same reason: what the
+// command printed quotes back the URL it was given and whatever the server
+// answered with. State rather than config — it is a transcript of one failure,
+// replaced by the next one, and worth nothing after it.
+var FAILURE_LOG_SCRIPT = [
+  "set -eu",
+  "target=$1",
+  "dir=$(dirname -- \"$target\")",
+  "mkdir -p -- \"$dir\"",
+  "tmp=$(mktemp -- \"$dir/.mihoro-failure.XXXXXX\")",
+  "trap 'rm -f -- \"$tmp\"' EXIT",
+  "cat > \"$tmp\"",
+  "chmod 600 -- \"$tmp\"",
+  "mv -f -- \"$tmp\" \"$target\"",
+  "trap - EXIT"
+].join("\n")
+
+function failureLogWriteCommand(path) {
+  return ["bash", "-c", FAILURE_LOG_SCRIPT, "omahoro-failure-log", String(path)]
+}
+
+// Paths and the command that failed, nothing more. This string becomes argv,
+// which the process list shows to every user on the machine.
+function diagnosePrompt(kind, logPath, configPath) {
+  var command = diagnosableCommand(kind)
+  if (command === "") command = "mihoro"
+  return [
+    "`" + command + "` failed on this Omarchy machine and I want to know why.",
+    "",
+    "Its output, stdout and stderr together, is in:",
+    "  " + String(logPath || ""),
+    "",
+    "mihoro's configuration is in:",
+    "  " + String(configPath || ""),
+    "",
+    "The subscription URL in that file is a bearer credential — the whole of the",
+    "authentication. Read it if you need it, but do not print it, and do not put",
+    "it in a commit, an issue, or a paste.",
+    "",
+    "Work out what failed and tell me how to fix it. Worth ruling out: the",
+    "subscription answering with something that is not a Clash config, a URL that",
+    "has expired or is being rejected, and mihomo.service failing to come back up",
+    "(journalctl --user -u mihomo.service -n 50 --no-pager)."
+  ].join("\n")
+}
+
+function diagnoseCommand(prompt) {
+  return ["omarchy-agent", "--prompt", String(prompt || "")]
 }
 
 // ---------------------------------------------------------- connection state
