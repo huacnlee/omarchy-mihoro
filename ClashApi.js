@@ -255,11 +255,33 @@ function findRoute(body, host) {
   return ""
 }
 
+// Group names come from the subscription, and the API's keys and PUT path
+// are case-sensitive: one config's rule group is `PROXY`, another's is
+// `Proxy`. Resolve the payload's real key for the wanted name — exact match
+// first, then case-insensitive — so both parsing and switching address the
+// group the core actually has. Null when nothing matches.
+function resolveGroupName(body, wanted) {
+  var payload = parseJson(body)
+  var proxies = payload && payload.proxies && typeof payload.proxies === "object"
+    ? payload.proxies : null
+  if (!proxies) return null
+  var name = String(wanted || "")
+  if (name === "") return null
+  if (Object.prototype.hasOwnProperty.call(proxies, name)) return name
+  var lower = name.toLowerCase()
+  for (var key in proxies) {
+    if (!Object.prototype.hasOwnProperty.call(proxies, key)) continue
+    if (key.toLowerCase() === lower) return key
+  }
+  return null
+}
+
 function parseProxyGroup(body, groupName) {
   var payload = parseJson(body)
   if (!payload) return null
   var proxies = payload.proxies
-  var group = proxies && typeof proxies === "object" ? proxies[String(groupName || "")] : null
+  var resolved = resolveGroupName(body, groupName)
+  var group = resolved !== null ? proxies[resolved] : null
   var all = group && group.all instanceof Array ? group.all : []
   var options = []
   for (var i = 0; i < all.length; i++) {

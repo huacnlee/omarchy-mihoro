@@ -206,6 +206,11 @@ grep -Fq 'root.service.selectModeProxy(root.draftProxy)' components/ConnectionSe
 refute -Fq 'onChanged: function(value) { root.service.selectModeProxy(value) }' components/ConnectionSection.qml
 grep -Fq 'readonly property string currentProxyGroup:' Service.qml
 grep -Fq 'ClashApi.parseProxyGroup(result.body, "PROXY")' Service.qml
+# The group name is the subscription's choice (`Proxy` as often as `PROXY`),
+# so the payload's real key is resolved and reused for the case-sensitive PUT.
+grep -Fq 'ClashApi.resolveGroupName(result.body, "PROXY")' Service.qml
+grep -Fq 'property string ruleProxyGroup: "PROXY"' Service.qml
+grep -Fq 'mode === "rule" ? ruleProxyGroup' Service.qml
 grep -Fq 'ClashApi.selectProxyCommand(apiBase, config.secret, currentProxyGroup, wanted)' Service.qml
 
 # ---- subscriptions --------------------------------------------------------

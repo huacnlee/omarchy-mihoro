@@ -194,6 +194,23 @@ assert.deepStrictEqual(Array.from(ruleProxy.options, option => option.value), ["
 assert.strictEqual(api.parseProxyGroup('{"proxies":{}}', "PROXY").options.length, 0)
 assert.strictEqual(api.parseProxyGroup("nope", "PROXY"), null)
 
+// The group name comes from the subscription, and not every one calls it
+// `PROXY` — some ship `Proxy`. Lookups resolve the payload's real key
+// case-insensitively, because both this parse and the PUT path must address
+// the group the core actually has.
+const lowerProxy = api.parseProxyGroup(JSON.stringify({
+  proxies: {
+    GLOBAL: { type: "Selector", now: "Singapore", all: ["Singapore"] },
+    Proxy: { type: "Selector", now: "Tokyo JP", all: ["DIRECT", "Tokyo JP"] }
+  }
+}), "PROXY")
+assert.strictEqual(lowerProxy.current, "Tokyo JP")
+assert.deepStrictEqual(Array.from(lowerProxy.options, option => option.value), ["DIRECT", "Tokyo JP"])
+assert.strictEqual(api.resolveGroupName(JSON.stringify({ proxies: { Proxy: { type: "Selector" } } }), "PROXY"), "Proxy")
+assert.strictEqual(api.resolveGroupName(JSON.stringify({ proxies: { PROXY: { type: "Selector" } } }), "PROXY"), "PROXY")
+assert.strictEqual(api.resolveGroupName(JSON.stringify({ proxies: {} }), "PROXY"), null)
+assert.strictEqual(api.resolveGroupName("nope", "PROXY"), null)
+
 const routes = api.parseRouteOptions(JSON.stringify({ proxies: {
   DIRECT: { type: "Direct" },
   REJECT: { type: "Reject" },

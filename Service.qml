@@ -67,6 +67,11 @@ Item {
   property string testingDelayGroup: ""
   property var ruleProxyOptions: []
   property string currentRuleProxy: ""
+  // The rule group as the core actually names it — usually `PROXY`, but the
+  // name comes from the subscription and some ship `Proxy`. Resolved from
+  // every /proxies payload; the PUT path is case-sensitive, so switching
+  // must use this, not a literal.
+  property string ruleProxyGroup: "PROXY"
   property var routeOptions: [
     { value: "DIRECT", label: "DIRECT" },
     { value: "REJECT", label: "REJECT" }
@@ -160,7 +165,7 @@ Item {
   // agree except in the window between a switch and the next refresh.
   readonly property string mode: pendingMode !== "" ? pendingMode
     : (liveConfigs && liveConfigs.mode !== "" ? liveConfigs.mode : config.mode)
-  readonly property string currentProxyGroup: mode === "rule" ? "PROXY"
+  readonly property string currentProxyGroup: mode === "rule" ? ruleProxyGroup
     : (mode === "global" ? "GLOBAL" : "")
   readonly property var currentModeProxyOptions: mode === "rule" ? ruleProxyOptions
     : (mode === "global" ? globalProxyOptions : [])
@@ -1036,6 +1041,8 @@ Item {
       var result = ClashApi.classify(exitCode, proxiesOut.text, proxiesErr.text)
       if (!result.ok) return
       var globalGroup = ClashApi.parseProxyGroup(result.body, "GLOBAL")
+      var ruleGroupName = ClashApi.resolveGroupName(result.body, "PROXY")
+      if (ruleGroupName !== null) root.ruleProxyGroup = ruleGroupName
       var ruleGroup = ClashApi.parseProxyGroup(result.body, "PROXY")
       if (!globalGroup || !ruleGroup) return
       root.globalProxyOptions = globalGroup.options
@@ -1080,7 +1087,7 @@ Item {
       var selectedGroup = root.pendingProxyGroup
       var activateGlobal = root.globalSelectionRequested
       if (root.pendingModeProxy !== "") {
-        if (selectedGroup === "PROXY") root.currentRuleProxy = root.pendingModeProxy
+        if (selectedGroup === root.ruleProxyGroup) root.currentRuleProxy = root.pendingModeProxy
         else if (selectedGroup === "GLOBAL") root.currentGlobalProxy = root.pendingModeProxy
       }
       if (selected !== "") root.currentGlobalProxy = selected
