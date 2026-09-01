@@ -42,6 +42,8 @@ Panel {
       return subs
     }
     if (root.panelPage === 3) return ["install"]
+    if (root.panelPage === 4) return ["route-test"]
+    if (root.panelPage === 5) return []
     if (!mihoro.probe.mihoroInstalled) return ["setup"]
     if (!mihoro.initialized) return ["setup"]
     var list = ["power"]
@@ -109,6 +111,7 @@ Panel {
     else if (target === "add") subscription.beginAdd()
     else if (target === "update") mihoro.updateSubscription()
     else if (target === "install") mihoro.openInstallationGuide()
+    else if (target === "route-test") mihoro.testRoutes()
     else if (target === "setup") {
       if (!mihoro.probe.mihoroInstalled) root.openInstallPage()
       else {
@@ -162,6 +165,40 @@ Panel {
   }
 
   function leaveInstallPage() {
+    panelPage = 1
+    cursorActive = false
+    cursorIndex = 0
+    if (panelFlick) panelFlick.contentY = 0
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function openRouteTestPage() {
+    panelPage = 4
+    cursorActive = false
+    cursorIndex = 0
+    if (panelFlick) panelFlick.contentY = 0
+    mihoro.testRoutes()
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function leaveRouteTestPage() {
+    panelPage = 1
+    cursorActive = false
+    cursorIndex = 0
+    if (panelFlick) panelFlick.contentY = 0
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function openRulesPage() {
+    rulesSection.begin(mihoro.activeSubscriptionId)
+    panelPage = 5
+    cursorActive = false
+    cursorIndex = 0
+    if (panelFlick) panelFlick.contentY = 0
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function leaveRulesPage() {
     panelPage = 1
     cursorActive = false
     cursorIndex = 0
@@ -321,6 +358,8 @@ Panel {
       onCloseRequested: {
         if (root.panelPage === 2) root.leaveSubscriptionPage()
         else if (root.panelPage === 3) root.leaveInstallPage()
+        else if (root.panelPage === 4) root.leaveRouteTestPage()
+        else if (root.panelPage === 5) root.leaveRulesPage()
         else root.close()
       }
       onTabRequested: function(direction) { root.switchPanel(direction) }
@@ -430,10 +469,15 @@ Panel {
                 canOpenSubscription: mihoro.probe.mihoroInstalled
                 canRestart: mihoro.initialized && mihoro.probe.unitLoaded
                 canCopyProxy: mihoro.probe.mihoroInstalled && !mihoro.copyingProxyExport
+                canOpenRules: mihoro.activeSubscriptionId !== "" && mihoro.rulesLoaded
+                  && !mihoro.applying
+                canTestRoutes: mihoro.initialized && mihoro.serviceActive && mihoro.apiState === "ok"
                 onRestartRequested: mihoro.restartService()
                 onCopyProxyRequested: mihoro.copyProxyExport()
                 onInstallRequested: root.openInstallPage()
                 onSubscriptionRequested: root.openSubscriptionPage()
+                onRulesRequested: root.openRulesPage()
+                onRouteTestRequested: root.openRouteTestPage()
               }
             }
           }
@@ -445,7 +489,7 @@ Panel {
           // click.
           Item {
             id: noticeBlock
-            visible: (root.panelPage === 1 || root.panelPage === 2) && text !== ""
+            visible: (root.panelPage === 1 || root.panelPage === 2 || root.panelPage === 5) && text !== ""
             width: parent.width
             implicitHeight: Math.max(noticeText.implicitHeight,
                 noticeClose.visible ? noticeClose.implicitHeight : 0)
@@ -654,6 +698,28 @@ Panel {
             hasCursor: root.cursorTarget === "install"
             onBackRequested: root.leaveInstallPage()
             onGuideRequested: mihoro.openInstallationGuide()
+          }
+
+          RulesSection {
+            id: rulesSection
+            visible: root.panelPage === 5
+            width: parent.width
+            service: mihoro
+            textColor: root.foreground
+            panelFontFamily: root.fontFamily
+            onBackRequested: root.leaveRulesPage()
+            onApplyRequested: function(subscriptionId, rules) { mihoro.applyRules(subscriptionId, rules) }
+          }
+
+          RouteTestSection {
+            visible: root.panelPage === 4
+            width: parent.width
+            service: mihoro
+            textColor: root.foreground
+            panelFontFamily: root.fontFamily
+            hasCursor: root.cursorTarget === "route-test"
+            onBackRequested: root.leaveRouteTestPage()
+            onTestRequested: mihoro.testRoutes()
           }
         }
       }

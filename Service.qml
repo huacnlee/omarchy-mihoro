@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import "MihoroConfig.js" as MihoroConfig
 import "Subscriptions.js" as Subscriptions
+import "Rules.js" as Rules
 import "ClashApi.js" as ClashApi
 import "Model.js" as Model
 
@@ -35,6 +36,8 @@ Item {
   // only the selected entry reaches mihoro.toml. See Subscriptions.js.
   property var subscriptions: Subscriptions.defaults()
   property bool subscriptionsLoaded: false
+  property var ruleStore: Rules.defaults()
+  property bool rulesLoaded: false
 
   // ---- what mihomo's API reports
   property string apiState: "unknown"       // ok | unauthorized | unreachable | disabled | unknown
@@ -62,6 +65,17 @@ Item {
   // payload as the global options.
   property var proxyGroups: []
   property string testingDelayGroup: ""
+  property var ruleProxyOptions: []
+  property string currentRuleProxy: ""
+  property var routeOptions: [
+    { value: "DIRECT", label: "DIRECT" },
+    { value: "REJECT", label: "REJECT" }
+  ]
+
+  // ---- route test page
+  property var routeTests: []
+  property int routeTestIndex: -1
+  readonly property bool routeTestRunning: routeTestIndex >= 0
 
   // ---- in-flight intent
   //
@@ -82,6 +96,8 @@ Item {
   // of believed.
   property int _tunPatchCount: 0
   property int _configsTunGen: 0
+  property string pendingModeProxy: ""
+  property string pendingProxyGroup: ""
   property bool globalSelectionRequested: false
   property string actionKind: ""
   property string actionStatus: ""
@@ -119,10 +135,15 @@ Item {
   }
 
   readonly property string home: Quickshell.env("HOME") || ""
+  readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (home + "/.config")
   readonly property string mihoroConfigPath: MihoroConfig.configPath(home)
   readonly property string subscriptionsPath: Subscriptions.storePath(home)
+  readonly property string rulesPath: Rules.storePath(home)
   readonly property string mihomoConfigPath: MihoroConfig.mihomoConfigPath(config.mihomoConfigRoot, home)
+  readonly property string mihomoConfigRoot: MihoroConfig.expandHome(config.mihomoConfigRoot, home)
   readonly property string mihomoBinaryPath: MihoroConfig.mihomoBinaryPath(config.mihomoBinaryPath, home)
+  readonly property string enhancerPath: localPath(Qt.resolvedUrl("scripts/config_enhancer.py"))
+  readonly property string timerManagerPath: localPath(Qt.resolvedUrl("scripts/timer_manager.py"))
   readonly property string apiBase: ClashApi.baseUrl(config.externalController)
 
   // Not `state`: QQuickItem already owns that name for its own state machine.
@@ -139,19 +160,31 @@ Item {
   // agree except in the window between a switch and the next refresh.
   readonly property string mode: pendingMode !== "" ? pendingMode
     : (liveConfigs && liveConfigs.mode !== "" ? liveConfigs.mode : config.mode)
+  readonly property string currentProxyGroup: mode === "rule" ? "PROXY"
+    : (mode === "global" ? "GLOBAL" : "")
+  readonly property var currentModeProxyOptions: mode === "rule" ? ruleProxyOptions
+    : (mode === "global" ? globalProxyOptions : [])
+  readonly property string currentModeProxy: mode === "direct" ? "DIRECT"
+    : (pendingModeProxy !== "" && pendingProxyGroup === currentProxyGroup ? pendingModeProxy
+      : (mode === "rule" ? currentRuleProxy : currentGlobalProxy))
 
   readonly property bool busy: probeProcess.running || configReadProcess.running
     || actionProcess.running || modeProcess.running || proxySelectProcess.running
     || configWriteProcess.running || guideProcess.running
     || subscriptionsReadProcess.running || subscriptionsWriteProcess.running
+    || rulesReadProcess.running || rulesWriteProcess.running
+    || configEnhancerProcess.running || timerManagerProcess.running
   readonly property bool actionRunning: actionProcess.running
   // Narrower than `busy`: only the writes and the CLI run that a subscription
   // change sets off. The refresh poll must not grey the list out every 30s.
   readonly property bool applying: configWriteProcess.running || actionProcess.running
     || subscriptionsWriteProcess.running
   readonly property bool copyingProxyExport: proxyExportProcess.running || clipboardProcess.running
+  readonly property bool rulesApplying: configEnhancerProcess.running || rulesWriteProcess.running
 
   signal actionFinished(string kind, bool ok)
+  signal proxySelectionFinished(bool ok)
+  signal rulesApplyFinished(bool ok)
 
   function localPath(url) {
     var value = String(url || "")
@@ -208,6 +241,54 @@ Item {
     connectionsProcess.running = true
   }
 
+  function routeTestEntries() {
+    return [
+      { label: "Google", host: "google.com", result: "Testing..." },
+      { label: "X", host: "x.com", result: "Waiting..." },
+      { label: "GitHub", host: "github.com", result: "Waiting..." },
+      { label: "Douyin", host: "douyin.com", result: "Waiting..." },
+      { label: "Wechat", host: "weixin.com", result: "Waiting..." },
+      { label: "Taobao", host: "taobao.com", result: "Waiting..." }
+    ]
+  }
+
+  function setRouteTestResult(index, result) {
+    var next = routeTests.slice()
+    next[index] = { label: next[index].label, host: next[index].host, result: result }
+    routeTests = next
+  }
+
+  function testRoutes() {
+    if (routeTestRunning) return
+    routeTests = routeTestEntries()
+    if (apiBase === "" || !serviceActive || apiState !== "ok") {
+      for (var i = 0; i < routeTests.length; i++) setRouteTestResult(i, "Unavailable")
+      return
+    }
+    routeTestIndex = 0
+    startRouteTest()
+  }
+
+  function startRouteTest() {
+    if (routeTestIndex < 0 || routeTestIndex >= routeTests.length) {
+      routeTestIndex = -1
+      return
+    }
+    setRouteTestResult(routeTestIndex, "Testing...")
+    routeRequestProcess.command = ClashApi.routeTestCommand(routeTests[routeTestIndex].host)
+    routeRequestProcess.running = true
+    routeLookupDelay.restart()
+  }
+
+  function finishRouteTest(result) {
+    if (!routeTestRunning) return
+    setRouteTestResult(routeTestIndex, result)
+    if (routeRequestProcess.running) routeRequestProcess.running = false
+    routeTestIndex += 1
+    if (routeTestIndex >= routeTests.length) routeTestIndex = -1
+    else startRouteTest()
+  }
+
   // ---------------------------------------------------------------- actions
 
   function setMode(next) {
@@ -229,15 +310,29 @@ Item {
     var wanted = String(name || "")
     if (wanted === "" || !canSwitchMode || proxySelectProcess.running) return
     pendingGlobalProxy = wanted
+    pendingProxyGroup = "GLOBAL"
     globalSelectionRequested = true
     lastError = ""
     proxySelectProcess.command = ClashApi.selectProxyCommand(apiBase, config.secret, "GLOBAL", wanted)
     proxySelectProcess.running = true
   }
 
+  function selectModeProxy(name) {
+    var wanted = String(name || "")
+    if (wanted === "" || currentProxyGroup === "" || !canSwitchMode || proxySelectProcess.running) return false
+    if (wanted === currentModeProxy) return false
+    pendingModeProxy = wanted
+    pendingProxyGroup = currentProxyGroup
+    lastError = ""
+    proxySelectProcess.command = ClashApi.selectProxyCommand(apiBase, config.secret, currentProxyGroup, wanted)
+    proxySelectProcess.running = true
+    return true
+  }
+
   function cancelGlobalSelection() {
     globalSelectionRequested = false
     pendingGlobalProxy = ""
+    if (pendingProxyGroup === "GLOBAL") pendingProxyGroup = ""
   }
 
   // Same endpoint as the GLOBAL picker, aimed at any Selector group — what
@@ -317,7 +412,7 @@ Item {
 
   function updateSubscription() {
     if (!initialized) return
-    runAction("update", Model.updateConfigCommand(), "Refreshing subscription…")
+    runConfigEnhancer("update", "Refreshing subscription…")
   }
 
   function copyProxyExport() {
@@ -352,6 +447,25 @@ Item {
     if (subscriptionsReadProcess.running) return
     subscriptionsReadProcess.command = Subscriptions.readCommand(subscriptionsPath)
     subscriptionsReadProcess.running = true
+  }
+
+  function loadRules() {
+    if (rulesReadProcess.running) return
+    rulesReadProcess.command = Rules.readCommand(rulesPath)
+    rulesReadProcess.running = true
+  }
+
+  function rulesFor(subscriptionId) { return Rules.list(ruleStore, subscriptionId) }
+
+  function applyRules(subscriptionId, items) {
+    if (rulesApplying || String(subscriptionId || "") === "") return false
+    ruleStore = Rules.replace(ruleStore, subscriptionId, items).store
+    _pendingRules = JSON.stringify(ruleStore, null, 2) + "\n"
+    _afterRulesWrite = "apply"
+    rulesWriteProcess.command = Rules.writeCommand(rulesPath)
+    rulesWriteProcess.stdinEnabled = true
+    rulesWriteProcess.running = true
+    return true
   }
 
   // mihoro.toml wins: it is what the core is actually using. A URL that arrived
@@ -504,6 +618,41 @@ Item {
     actionProcess.running = true
   }
 
+  function enhancerCommand(kind) {
+    return ["python3", enhancerPath, kind,
+      "--config", mihomoConfigPath,
+      "--rules", rulesPath,
+      "--subscriptions", subscriptionsPath,
+      "--mihoro-config", mihoroConfigPath,
+      "--subscription-id", activeSubscriptionId,
+      "--mihomo-bin", mihomoBinaryPath,
+      "--config-dir", mihomoConfigRoot]
+  }
+
+  function runConfigEnhancer(kind, label) {
+    if (configEnhancerProcess.running || activeSubscriptionId === "") return
+    ruleActionKind = kind
+    actionStatus = label
+    lastError = ""
+    configEnhancerProcess.command = enhancerCommand(kind)
+    configEnhancerProcess.running = true
+  }
+
+  function installRuleTimer() {
+    if (timerManagerProcess.running) return
+    timerManagerProcess.command = ["python3", timerManagerPath, "install",
+      "--mihoro-config", mihoroConfigPath,
+      "--config-home", configHome,
+      "--python", "python3",
+      "--enhancer", enhancerPath,
+      "--config", mihomoConfigPath,
+      "--rules", rulesPath,
+      "--subscriptions", subscriptionsPath,
+      "--mihomo-bin", mihomoBinaryPath,
+      "--config-dir", mihomoConfigRoot]
+    timerManagerProcess.running = true
+  }
+
   // ------------------------------------------------------ writing mihoro.toml
 
   property string _pendingText: ""
@@ -512,6 +661,9 @@ Item {
   property string _actionError: ""
   property string _pendingClipboard: ""
   property string _pendingSubscriptions: ""
+  property string _pendingRules: ""
+  property string _afterRulesWrite: ""
+  property string ruleActionKind: ""
   property string _pendingFailureLog: ""
   property bool _subscriptionsQueued: false
 
@@ -541,7 +693,7 @@ Item {
     } else if (next === "apply") {
       runAction("apply", Model.applyCommand(), "Applying mode…")
     } else if (next === "update") {
-      runAction("update", Model.updateConfigCommand(), "Fetching subscription…")
+      runConfigEnhancer("update", "Fetching subscription…")
     } else if (next === "init") {
       runAction("init", Model.initCommand(), "Setting up mihoro…")
     } else {
@@ -586,7 +738,10 @@ Item {
     syncTraffic()
   }
 
-  Component.onCompleted: loadSubscriptions()
+  Component.onCompleted: {
+    loadSubscriptions()
+    loadRules()
+  }
 
   Timer {
     id: refreshTimer
@@ -638,6 +793,17 @@ Item {
     interval: 3000
     repeat: false
     onTriggered: root.syncTraffic()
+  }
+
+  Timer {
+    id: routeLookupDelay
+    interval: 350
+    repeat: false
+    onTriggered: {
+      if (!root.routeTestRunning) return
+      routeLookupProcess.command = ClashApi.connectionsCommand(root.apiBase, root.config.secret)
+      routeLookupProcess.running = true
+    }
   }
 
   // Every poll skips itself while its own process is still running, so one that
@@ -830,6 +996,37 @@ Item {
   }
 
   Process {
+    id: routeRequestProcess
+    running: false
+    command: []
+    onExited: function(exitCode) {
+      // A fast successful response can disappear before the API snapshot; a
+      // failed request cannot have a route to report.
+      if (root.routeTestRunning && exitCode !== 0 && !routeLookupProcess.running
+          && !routeLookupDelay.running)
+        root.finishRouteTest("Failed")
+    }
+  }
+
+  Process {
+    id: routeLookupProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: routeLookupOut; waitForEnd: true }
+    stderr: StdioCollector { id: routeLookupErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      if (!root.routeTestRunning) return
+      var response = ClashApi.classify(exitCode, routeLookupOut.text, routeLookupErr.text)
+      if (!response.ok) {
+        root.finishRouteTest("Unavailable")
+        return
+      }
+      var route = ClashApi.findRoute(response.body, root.routeTests[root.routeTestIndex].host)
+      root.finishRouteTest(route === "" ? "Not found" : route)
+    }
+  }
+
+  Process {
     id: proxiesProcess
     running: false
     command: []
@@ -838,10 +1035,14 @@ Item {
     onExited: function(exitCode) {
       var result = ClashApi.classify(exitCode, proxiesOut.text, proxiesErr.text)
       if (!result.ok) return
-      var parsed = ClashApi.parseGlobalProxies(result.body)
-      if (!parsed) return
-      root.globalProxyOptions = parsed.options
-      root.currentGlobalProxy = parsed.current
+      var globalGroup = ClashApi.parseProxyGroup(result.body, "GLOBAL")
+      var ruleGroup = ClashApi.parseProxyGroup(result.body, "PROXY")
+      if (!globalGroup || !ruleGroup) return
+      root.globalProxyOptions = globalGroup.options
+      root.currentGlobalProxy = globalGroup.current
+      root.ruleProxyOptions = ruleGroup.options
+      root.currentRuleProxy = ruleGroup.current
+      root.routeOptions = ClashApi.parseRouteOptions(result.body)
       var groups = ClashApi.parseSelectorGroups(result.body)
       if (groups) {
         root.proxyGroups = groups
@@ -866,16 +1067,28 @@ Item {
     stderr: StdioCollector { id: proxySelectErr; waitForEnd: true }
     onExited: function(exitCode) {
       var result = ClashApi.classify(exitCode, proxySelectOut.text, proxySelectErr.text)
+      var modeSelection = root.pendingModeProxy !== ""
       if (!result.ok) {
+        root.pendingModeProxy = ""
+        root.pendingProxyGroup = ""
         root.cancelGlobalSelection()
         root.reportError(result.message)
+        if (modeSelection) root.proxySelectionFinished(false)
         return
       }
       var selected = root.pendingGlobalProxy
+      var selectedGroup = root.pendingProxyGroup
       var activateGlobal = root.globalSelectionRequested
+      if (root.pendingModeProxy !== "") {
+        if (selectedGroup === "PROXY") root.currentRuleProxy = root.pendingModeProxy
+        else if (selectedGroup === "GLOBAL") root.currentGlobalProxy = root.pendingModeProxy
+      }
       if (selected !== "") root.currentGlobalProxy = selected
       root.pendingGlobalProxy = ""
+      root.pendingModeProxy = ""
+      root.pendingProxyGroup = ""
       root.globalSelectionRequested = false
+      if (modeSelection) root.proxySelectionFinished(true)
       if (activateGlobal && root.mode !== "global") root.setMode("global")
       else {
         if (activateGlobal) {
@@ -1119,6 +1332,80 @@ Item {
         return
       }
       if (root._subscriptionsQueued) root.writeSubscriptions()
+    }
+  }
+
+  Process {
+    id: rulesReadProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: rulesReadOut; waitForEnd: true }
+    onExited: {
+      root.ruleStore = Rules.parse(rulesReadOut.text)
+      root.rulesLoaded = true
+    }
+  }
+
+  Process {
+    id: rulesWriteProcess
+    running: false
+    command: []
+    stdinEnabled: false
+    stderr: StdioCollector { id: rulesWriteErr; waitForEnd: true }
+    onStarted: {
+      rulesWriteProcess.write(root._pendingRules)
+      root._pendingRules = ""
+      rulesWriteProcess.stdinEnabled = false
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        root._afterRulesWrite = ""
+        root.reportError(Model.noticeMessage(rulesWriteErr.text || "Could not save local rules."))
+        root.loadRules()
+        root.rulesApplyFinished(false)
+        return
+      }
+      var next = root._afterRulesWrite
+      root._afterRulesWrite = ""
+      if (next === "apply") root.runConfigEnhancer("apply", "Applying local rules…")
+    }
+  }
+
+  Process {
+    id: configEnhancerProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: configEnhancerOut; waitForEnd: true }
+    stderr: StdioCollector { id: configEnhancerErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      var kind = root.ruleActionKind
+      root.ruleActionKind = ""
+      root.actionStatus = ""
+      if (exitCode !== 0) {
+        root.reportError(Model.noticeMessage(configEnhancerErr.text || "Could not apply local rules."))
+        root.loadRules()
+        if (kind === "apply") root.rulesApplyFinished(false)
+        return
+      }
+      root.lastError = ""
+      root.actionStatus = kind === "update" ? "Subscription and local rules updated." : "Local rules applied."
+      actionStatusTimer.restart()
+      root.loadRules()
+      if (kind === "apply") root.rulesApplyFinished(true)
+      root.installRuleTimer()
+      settleTimer.restart()
+    }
+  }
+
+  Process {
+    id: timerManagerProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: timerManagerOut; waitForEnd: true }
+    stderr: StdioCollector { id: timerManagerErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      if (exitCode !== 0)
+        root.reportError(Model.noticeMessage(timerManagerErr.text || "Could not enable local-rule auto-update."))
     }
   }
 

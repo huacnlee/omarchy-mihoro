@@ -180,11 +180,38 @@ grep -Fq 'root._tunPatchCount += 1' Service.qml
 grep -Fq 'onStarted: root._configsTunGen = root._tunPatchCount' Service.qml
 grep -Fq 'if (root._configsTunGen !== root._tunPatchCount) {' Service.qml
 sed -n '/id: optimismTimer/,/^  }/p' Service.qml | grep -Fq 'root.pendingTun = -1'
+# The active node is a first-class connection fact. At rest it is a plain
+# label/value row; editing stages a choice until Apply, while Cancel does not
+# touch the core. Rule controls PROXY, Global controls GLOBAL, and Direct has
+# no selectable proxy group.
+grep -Fq 'label: "Proxy"' components/ConnectionSection.qml
+grep -Fq 'root.service.currentModeProxy' components/ConnectionSection.qml
+grep -Fq 'root.service.currentModeProxyOptions' components/ConnectionSection.qml
+grep -Fq 'property bool editingProxy: false' components/ConnectionSection.qml
+grep -Fq 'property string draftProxy: ""' components/ConnectionSection.qml
+grep -Fq 'id: proxyValue' components/ConnectionSection.qml
+grep -Fq 'anchors.right: parent.right' components/ConnectionSection.qml
+grep -Fq 'anchors.left: proxyLabel.right' components/ConnectionSection.qml
+grep -Fq 'text: "Apply"' components/ConnectionSection.qml
+grep -Fq 'text: "Cancel"' components/ConnectionSection.qml
+python3 - <<'PROXY_CANCEL'
+import re, sys
+src = open("components/ConnectionSection.qml").read()
+block = re.search(r'text: "Cancel"(.*?)onClicked: root\.cancelProxyEdit\(\)', src, re.S)
+if not block or "bordered: true" not in block.group(1):
+    sys.exit("proxy Cancel must be an outline button")
+print("proxy cancel outline ok")
+PROXY_CANCEL
+grep -Fq 'root.service.selectModeProxy(root.draftProxy)' components/ConnectionSection.qml
+refute -Fq 'onChanged: function(value) { root.service.selectModeProxy(value) }' components/ConnectionSection.qml
+grep -Fq 'readonly property string currentProxyGroup:' Service.qml
+grep -Fq 'ClashApi.parseProxyGroup(result.body, "PROXY")' Service.qml
+grep -Fq 'ClashApi.selectProxyCommand(apiBase, config.secret, currentProxyGroup, wanted)' Service.qml
 
 # ---- subscriptions --------------------------------------------------------
 
 # URL subscriptions only: one remote config URL, fetched by the CLI.
-grep -Fq 'Model.updateConfigCommand()' Service.qml
+grep -Fq 'runConfigEnhancer("update"' Service.qml
 grep -Fq 'remote_config_url' MihoroConfig.js
 # Selecting one fetches it; a selection nothing has downloaded would describe a
 # subscription the proxy is not using.
@@ -209,7 +236,7 @@ grep -Fq 'if (selected && selected.url === text) return { store: store, changed:
 
 # A refused or failed subscription action has to say so on the page it happened
 # on, or it reads as the panel ignoring the click.
-grep -Fq 'visible: (root.panelPage === 1 || root.panelPage === 2) && text !== ""' Panel.qml
+grep -Fq 'visible: (root.panelPage === 1 || root.panelPage === 2 || root.panelPage === 5) && text !== ""' Panel.qml
 
 # mihoro.toml wins over the stored selection: a URL set by `mihoro init` or a
 # hand edit is adopted into the list rather than overwritten by it.
@@ -282,6 +309,28 @@ grep -Fq 'text: "Subscriptions..."' components/PanelMenu.qml
 [[ "$(grep -n 'text: "Install Mihoro..."' components/PanelMenu.qml | cut -d: -f1)" -lt \
    "$(grep -n 'text: "Subscriptions..."' components/PanelMenu.qml | cut -d: -f1)" ]]
 grep -Fq 'onSubscriptionRequested: root.openSubscriptionPage()' Panel.qml
+grep -Fq 'text: "Test routes..."' components/PanelMenu.qml
+grep -Fq 'onRouteTestRequested: root.openRouteTestPage()' Panel.qml
+grep -Fq 'text: "Rules..."' components/PanelMenu.qml
+grep -Fq 'onRulesRequested: root.openRulesPage()' Panel.qml
+grep -Fq 'RouteTestSection {' Panel.qml
+grep -Fq 'function testRoutes()' Service.qml
+grep -Fq 'ClashApi.routeTestCommand(' Service.qml
+grep -Fq 'ClashApi.findRoute(' Service.qml
+grep -Fq 'RulesSection {' Panel.qml
+refute -Fq 'text: "Rules..."' components/SubscriptionSection.qml
+[[ "$(grep -c 'visible: root.panelPage === 4' Panel.qml)" -eq 1 ]]
+grep -Fq 'visible: root.panelPage === 5' Panel.qml
+refute -Fq 'text: "Discard"' components/RulesSection.qml
+grep -B1 'rulesApplying ? "Applying…" : "Apply"' components/RulesSection.qml | grep -Fq 'width: parent.width'
+refute -Fq 'wanted === root.subscriptionId && root.dirty' components/RulesSection.qml
+refute -E 'text: "Cancel";.*bordered: false' components/RulesSection.qml
+grep -Fq 'function applyRules(subscriptionId, items)' Service.qml
+grep -Fq 'runConfigEnhancer("update"' Service.qml
+grep -Fq 'scripts/config_enhancer.py' Service.qml
+grep -Fq 'scripts/timer_manager.py' Service.qml
+grep -Fq 'Rules.writeCommand(rulesPath)' Service.qml
+refute -Fq 'runAction("update", Model.updateConfigCommand()' Service.qml
 grep -Fq 'text: "Install Mihoro..."' components/PanelMenu.qml
 grep -Fq 'onInstallRequested: root.openInstallPage()' Panel.qml
 sed -n '/id: menuButton/,/onClicked:/p' components/PanelMenu.qml | grep -Fq 'bordered: false'

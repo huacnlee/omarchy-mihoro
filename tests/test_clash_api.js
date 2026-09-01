@@ -44,6 +44,12 @@ assert.strictEqual(authed[authed.length - 1], "http://127.0.0.1:9090/configs")
 const connections = api.connectionsCommand("http://127.0.0.1:9090", "")
 assert.strictEqual(connections[connections.length - 1], "http://127.0.0.1:9090/connections")
 
+const routeRequest = api.routeTestCommand("www.google.com")
+assert.deepStrictEqual(Array.from(routeRequest), [
+  "curl", "-sS", "--location", "--max-time", "4", "--limit-rate", "1",
+  "-o", "/dev/null", "https://www.google.com/"
+])
+
 const proxies = api.proxiesCommand("http://127.0.0.1:9090", "s3cret")
 assert.ok(proxies.includes("Authorization: Bearer s3cret"))
 assert.strictEqual(proxies[proxies.length - 1], "http://127.0.0.1:9090/proxies")
@@ -137,6 +143,26 @@ assert.strictEqual(conns.downloadTotal, 1024)
 assert.strictEqual(conns.uploadTotal, 512)
 assert.strictEqual(conns.memory, 4096)
 
+const routed = JSON.stringify({
+  connections: [
+    {
+      metadata: { host: "assets.github.com", destinationIP: "140.82.121.4" },
+      chains: ["Tokyo 01", "PROXY"]
+    },
+    {
+      metadata: { host: "www.google.com", destinationIP: "142.250.4.100" },
+      chains: ["Singapore 02", "PROXY"]
+    }
+  ]
+})
+assert.strictEqual(api.findRoute(routed, "www.google.com"), "Singapore 02")
+assert.strictEqual(api.findRoute(routed, "github.com"), "Tokyo 01")
+assert.strictEqual(api.findRoute(JSON.stringify({
+  connections: [{ metadata: { host: "www.taobao.com" }, chains: ["DIRECT"] }]
+}), "taobao.com"), "DIRECT")
+assert.strictEqual(api.findRoute(routed, "x.com"), "")
+assert.strictEqual(api.findRoute("not json", "google.com"), "")
+
 // mihomo sends `connections: null` when there are none.
 assert.strictEqual(api.parseConnections('{"downloadTotal":1,"uploadTotal":2,"connections":null}').count, 0)
 assert.strictEqual(api.parseConnections("nope"), null)
@@ -153,6 +179,34 @@ assert.strictEqual(global.options[0].value, "DIRECT")
 assert.strictEqual(global.options[2].label, "Singapore")
 assert.strictEqual(api.parseGlobalProxies('{"proxies":{}}').options.length, 0)
 assert.strictEqual(api.parseGlobalProxies("nope"), null)
+
+// The status page switches the group that actually serves the active mode:
+// PROXY for Rule, GLOBAL for Global. Parsing must not silently keep reading
+// GLOBAL when the panel asks for the Rule-mode selector.
+const ruleProxy = api.parseProxyGroup(JSON.stringify({
+  proxies: {
+    GLOBAL: { type: "Selector", now: "Singapore", all: ["Singapore"] },
+    PROXY: { type: "Selector", now: "Tokyo JP", all: ["DIRECT", "Tokyo JP"] }
+  }
+}), "PROXY")
+assert.strictEqual(ruleProxy.current, "Tokyo JP")
+assert.deepStrictEqual(Array.from(ruleProxy.options, option => option.value), ["DIRECT", "Tokyo JP"])
+assert.strictEqual(api.parseProxyGroup('{"proxies":{}}', "PROXY").options.length, 0)
+assert.strictEqual(api.parseProxyGroup("nope", "PROXY"), null)
+
+const routes = api.parseRouteOptions(JSON.stringify({ proxies: {
+  DIRECT: { type: "Direct" },
+  REJECT: { type: "Reject" },
+  "LB-SG-01": { type: "AnyTLS" },
+  PROXY: { type: "Selector", all: ["LB-SG-01"] },
+  "Longbridge-SG": { type: "URLTest", all: ["LB-SG-01"] }
+}}))
+assert.strictEqual(JSON.stringify(routes), JSON.stringify([
+  { value: "DIRECT", label: "DIRECT" },
+  { value: "REJECT", label: "REJECT" },
+  { value: "PROXY", label: "PROXY" },
+  { value: "Longbridge-SG", label: "Longbridge-SG" }
+]))
 
 const sample = api.parseTrafficLine('{"up":120,"down":4096}')
 assert.strictEqual(sample.up, 120)

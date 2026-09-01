@@ -17,11 +17,15 @@ Item {
   property bool canOpenSubscription: false
   property bool canRestart: false
   property bool canCopyProxy: false
+  property bool canOpenRules: false
+  property bool canTestRoutes: false
 
   signal restartRequested()
   signal copyProxyRequested()
   signal installRequested()
   signal subscriptionRequested()
+  signal rulesRequested()
+  signal routeTestRequested()
 
   implicitWidth: Style.space(24)
   implicitHeight: Style.space(24)
@@ -88,6 +92,22 @@ Item {
         onActivated: {
           menu.close()
           root.subscriptionRequested()
+        }
+      }
+      MenuRow {
+        text: "Rules..."
+        enabled: root.canOpenRules
+        onActivated: {
+          menu.close()
+          root.rulesRequested()
+        }
+      }
+      MenuRow {
+        text: "Test routes..."
+        enabled: root.canTestRoutes
+        onActivated: {
+          menu.close()
+          root.routeTestRequested()
         }
       }
 

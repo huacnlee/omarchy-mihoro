@@ -21,6 +21,28 @@ Column {
   signal tunHovered(bool isHovered)
 
   readonly property bool live: service.apiState === "ok" && service.serviceActive
+  property bool editingProxy: false
+  property string draftProxy: ""
+  property bool applyingProxy: false
+
+  function beginProxyEdit() {
+    draftProxy = service.currentModeProxy
+    editingProxy = true
+  }
+
+  function cancelProxyEdit() {
+    editingProxy = false
+    applyingProxy = false
+    draftProxy = ""
+  }
+
+  Connections {
+    target: root.service
+    function onProxySelectionFinished(ok) {
+      root.applyingProxy = false
+      if (ok) root.cancelProxyEdit()
+    }
+  }
 
   spacing: Style.space(10)
 
@@ -94,6 +116,105 @@ Column {
   Column {
     width: parent.width
     spacing: Style.space(6)
+
+    Item {
+      width: parent.width
+      visible: !root.editingProxy
+      implicitHeight: Math.max(proxyLabel.implicitHeight, proxyValue.implicitHeight, editProxy.implicitHeight)
+
+      Text {
+        id: proxyLabel
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        text: "Proxy"
+        color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.55)
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      PanelActionButton {
+        id: editProxy
+        anchors.left: proxyLabel.right
+        anchors.leftMargin: Style.space(4)
+        anchors.verticalCenter: parent.verticalCenter
+        visible: root.live && root.service.currentProxyGroup !== ""
+        size: Style.space(20)
+        tooltipText: "Change proxy..."
+        foreground: root.textColor
+        hoverColor: root.textColor
+        fontFamily: root.panelFontFamily
+        onClicked: root.beginProxyEdit()
+
+        ActionIcon {
+          anchors.centerIn: parent
+          name: "edit"
+          iconSize: Style.font.caption
+          color: editProxy._hot ? editProxy.hoverColor : editProxy.foreground
+        }
+      }
+
+      Text {
+        id: proxyValue
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        width: Math.min(implicitWidth, parent.width * 0.72)
+        horizontalAlignment: Text.AlignRight
+        text: root.service.currentModeProxy !== "" ? root.service.currentModeProxy : "—"
+        color: root.textColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.bodySmall
+        elide: Text.ElideRight
+      }
+    }
+
+    Column {
+      width: parent.width
+      visible: root.editingProxy
+      spacing: Style.space(6)
+
+      SearchableDropdown {
+        width: parent.width
+        label: "Proxy"
+        value: root.draftProxy
+        options: root.service.currentModeProxyOptions
+        placeholderText: "Choose a node…"
+        emptyText: "No nodes available"
+        foreground: root.textColor
+        accent: Color.accent
+        fontFamily: root.panelFontFamily
+        enabled: !root.applyingProxy
+        onChanged: function(value) { root.draftProxy = value }
+      }
+
+      Row {
+        id: proxyActions
+        width: parent.width
+        spacing: Style.spacing.controlGap
+
+        Button {
+          width: (proxyActions.width - proxyActions.spacing) / 2
+          text: "Apply"
+          foreground: root.textColor
+          bordered: true
+          fontSize: Style.font.bodySmall
+          enabled: !root.applyingProxy && root.draftProxy !== ""
+            && root.draftProxy !== root.service.currentModeProxy
+          onClicked: {
+            if (root.service.selectModeProxy(root.draftProxy)) root.applyingProxy = true
+          }
+        }
+
+        Button {
+          width: (proxyActions.width - proxyActions.spacing) / 2
+          text: "Cancel"
+          foreground: root.textColor
+          bordered: true
+          fontSize: Style.font.bodySmall
+          enabled: !root.applyingProxy
+          onClicked: root.cancelProxyEdit()
+        }
+      }
+    }
 
     StatRow {
       width: parent.width

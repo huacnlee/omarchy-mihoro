@@ -66,6 +66,10 @@ Canvas {
       // set, not filled — the weight is what makes it a sibling.
       move(9.5, 2); line(4.5, 9); line(7.5, 9); line(6.5, 14)
       line(11.5, 7); line(8.5, 7); ctx.closePath()
+    } else if (root.name === "arrow-up") {
+      move(3.5, 9.5); line(8, 5); line(12.5, 9.5)
+    } else if (root.name === "arrow-down") {
+      move(3.5, 6.5); line(8, 11); line(12.5, 6.5)
     } else if (root.name === "settings") {
       // A gear, built from the grid rather than listed as points: eight teeth
       // are eight identical spokes, and writing them out would only invite one

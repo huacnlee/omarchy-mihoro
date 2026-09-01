@@ -8,6 +8,8 @@ QML_FILES := Panel.qml Service.qml \
 	components/ModeSection.qml \
 	components/NodesSection.qml \
 	components/ConnectionSection.qml \
+	components/RouteTestSection.qml \
+	components/RulesSection.qml \
 	components/SubscriptionSection.qml \
 	components/InstallSection.qml \
 	components/SetupCard.qml \
@@ -23,10 +25,13 @@ test-js:
 	node tests/test_theme_colors.js
 	node tests/test_mihoro_config.js
 	node tests/test_subscriptions.js
+	node tests/test_rules.js
 	node tests/test_clash_api.js
 	node tests/test_model.js
 
 test-shell:
+	python3 tests/test_config_enhancer.py
+	python3 tests/test_timer_manager.py
 	python3 tests/test_qml_names.py
 	bash tests/test_install.sh
 	bash tests/test_panel_source.sh

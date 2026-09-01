@@ -83,6 +83,15 @@ function configsCommand(base, secret) { return getCommand(base, secret, "/config
 function connectionsCommand(base, secret) { return getCommand(base, secret, "/connections") }
 function proxiesCommand(base, secret) { return getCommand(base, secret, "/proxies") }
 
+// Keep one byte-per-second response alive just long enough for `/connections`
+// to observe it. TUN captures this request exactly as it captures an app's
+// traffic; no explicit proxy argument is used because that would test curl's
+// configuration instead of the machine's route.
+function routeTestCommand(host) {
+  return ["curl", "-sS", "--location", "--max-time", TIMEOUT_SECONDS, "--limit-rate", "1",
+          "-o", "/dev/null", "https://" + String(host || "") + "/"]
+}
+
 function setModeCommand(base, secret, mode) {
   return ["curl", "-sS", "--max-time", TIMEOUT_SECONDS, "-w", "\\n%{http_code}",
           "-X", "PATCH", "-H", "Content-Type: application/json",
@@ -224,11 +233,33 @@ function parseConnections(body) {
   }
 }
 
-function parseGlobalProxies(body) {
+function hostMatches(candidate, wanted) {
+  var host = String(candidate || "").toLowerCase().replace(/\.$/, "")
+  var target = String(wanted || "").toLowerCase().replace(/\.$/, "")
+  return target !== "" && (host === target || host.endsWith("." + target))
+}
+
+// `chains` is ordered from the actual outbound back through its selector
+// groups. The first entry therefore answers what carried this request, while
+// PROXY/GLOBAL only describe how it was selected.
+function findRoute(body, host) {
+  var payload = parseJson(body)
+  var list = payload && payload.connections instanceof Array ? payload.connections : []
+  for (var i = 0; i < list.length; i++) {
+    var connection = list[i] || {}
+    var metadata = connection.metadata || {}
+    if (!hostMatches(metadata.host, host)) continue
+    var chains = connection.chains
+    return chains instanceof Array && chains.length > 0 ? String(chains[0] || "") : ""
+  }
+  return ""
+}
+
+function parseProxyGroup(body, groupName) {
   var payload = parseJson(body)
   if (!payload) return null
   var proxies = payload.proxies
-  var group = proxies && typeof proxies === "object" ? proxies.GLOBAL : null
+  var group = proxies && typeof proxies === "object" ? proxies[String(groupName || "")] : null
   var all = group && group.all instanceof Array ? group.all : []
   var options = []
   for (var i = 0; i < all.length; i++) {
@@ -288,6 +319,23 @@ function parseGroupDelay(body) {
     if (isFinite(delay)) delays[String(key)] = delay
   }
   return delays
+}
+
+function parseGlobalProxies(body) { return parseProxyGroup(body, "GLOBAL") }
+
+function parseRouteOptions(body) {
+  var payload = parseJson(body)
+  var proxies = payload && payload.proxies && typeof payload.proxies === "object"
+    ? payload.proxies : {}
+  var result = [{ value: "DIRECT", label: "DIRECT" }, { value: "REJECT", label: "REJECT" }]
+  var names = Object.keys(proxies)
+  for (var i = 0; i < names.length; i++) {
+    var name = names[i]
+    var proxy = proxies[name]
+    if (name === "DIRECT" || name === "REJECT" || !proxy || !(proxy.all instanceof Array)) continue
+    result.push({ value: name, label: name })
+  }
+  return result
 }
 
 // `Number(null)` is 0 and `Number("")` is 0, either of which would pass for a

@@ -57,12 +57,15 @@ edit.
   action there and then. "Add..." opens the editor; "Update" fetches.
 - Prefer the shorter label when both are honest, and never buy brevity with
   accuracy.
+- `Cancel` is always an outline button, so the way out remains visible without
+  competing with the action it cancels.
 - An icon-only action carries its label in `tooltipText`, and that label follows
   the same `...` rule.
 
 ## The panel's shape
 
-Three pages in one popup: the status page, subscriptions, and installation.
+Five pages in one popup: the status page, subscriptions, installation, local
+subscription rules, and a route test.
 Navigation between them is explicit — a named menu item or a back arrow, never a
 collapsible section, and never an accidental click on something that shows a
 credential.
@@ -93,6 +96,24 @@ credential.
 - **A refused or failed action reports on the page it happened on.** A notice
   that only renders on page one turns a rejected subscription switch into the
   panel appearing to ignore the click. That was a real bug.
+- **The route test reports the running core's actual outbound.** Opening it
+  makes short requests to Google, X, GitHub, Douyin, Wechat, and Taobao, then
+  reads each request's first mihomo connection chain entry. That is the node
+  (or `DIRECT`) which carried the traffic; selector group names are not shown
+  as if they were an outbound. Overseas and mainland sites are separated so
+  the routing policy is scannable at a glance.
+- **Local rules enhance a subscription; they do not replace it.** Each saved
+  subscription owns an ordered list of structured DOMAIN, DOMAIN-SUFFIX,
+  DOMAIN-KEYWORD, and GEOSITE rules. The list order is the match priority and
+  its routes are built-ins or proxy groups from the active config, never a
+  node name that an update can remove. Editing is staged until `Apply`.
+- **An enhanced update has no unruled window.** The plugin downloads into a
+  candidate, preserves mihoro's current local overrides, prepends the active
+  subscription's rules, asks the installed mihomo core to validate it, and
+  only then atomically replaces `config.yaml` and restarts once. Enabling local
+  rules moves config updates from mihoro's cron entry to the plugin's user
+  timer; unrelated cron entries are retained. Failure leaves the running file
+  untouched.
 
 ## Rows, the cursor, and the keyboard
 
@@ -144,6 +165,12 @@ A subscription URL is a bearer token — the whole of the authentication.
 - Where the panel and the CLI could disagree, the file on disk wins and the
   running core wins over both — the panel never shows a state nothing has
   confirmed.
+- The connection facts name the selectable node on its own `Proxy` label/value
+  row. In Rule mode that means the live `PROXY` selector; in Global mode it
+  means `GLOBAL`; Direct has no selector and says `DIRECT`. Editing expands the
+  row into a searchable picker, but choosing only stages a value: `Apply`
+  changes the running core and `Cancel` leaves it alone. Success returns to the
+  label/value row; failure leaves the editor open so the choice can be retried.
 
 ## Verification
 
