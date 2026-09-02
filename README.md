@@ -88,7 +88,6 @@ journalctl --user -u mihomo.service -n 30 --no-pager
 ## Development
 
 ```bash
-./install.sh --no-restart
 make test
 make validate
 ```

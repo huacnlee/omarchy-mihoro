@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 plugin_id="mihoro.omarchy"
 config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
 plugin_home="$config_home/omarchy/plugins"

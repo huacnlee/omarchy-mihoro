@@ -14,7 +14,7 @@ QML_FILES := Panel.qml Service.qml \
 	components/SetupCard.qml \
 	components/PanelMenu.qml
 
-.PHONY: test test-js test-shell qml-check validate
+.PHONY: test test-js test-shell qml-check validate install
 
 test: test-js test-shell
 
@@ -32,7 +32,7 @@ test-shell:
 	python3 tests/test_config_enhancer.py
 	python3 tests/test_timer_manager.py
 	python3 tests/test_qml_names.py
-	bash tests/test_install.sh
+	bash tests/test_link_plugin.sh
 	bash tests/test_panel_source.sh
 
 # Needs the Omarchy shell's qs.Commons / qs.Ui on the import path.
@@ -42,3 +42,8 @@ qml-check:
 validate: test qml-check
 	omarchy plugin validate .
 	git diff --check
+
+# Symlinks this checkout into ~/.config/omarchy/plugins so QML edits are read
+# live. Development only — the marketplace installs the plugin itself.
+install:
+	bash scripts/link-plugin.sh

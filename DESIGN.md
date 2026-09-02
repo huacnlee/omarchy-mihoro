@@ -94,7 +94,8 @@ credential.
   that only renders on page one turns a rejected subscription switch into the
   panel appearing to ignore the click. That was a real bug.
 - **The route test reports the running core's actual outbound.** Opening it
-  makes short requests to Google, X, GitHub, Douyin, Wechat, and Taobao, then
+  makes short requests to Google, X, GitHub, Claude, ChatGPT, xAI, Douyin,
+  Wechat, and Taobao, then
   reads each request's first mihomo connection chain entry. That is the node
   (or `DIRECT`) which carried the traffic; selector group names are not shown
   as if they were an outbound. Overseas and mainland sites are separated so
@@ -113,6 +114,10 @@ credential.
   untouched.
 
 ## Rows, the cursor, and the keyboard
+
+- **The bar icon has one mouse action.** Left-click opens the panel; middle- and
+  right-click do nothing. Service state changes belong inside the panel, where
+  their consequence is visible and an incidental bar click cannot trigger one.
 
 - A navigable row is a `CursorSurface`. It must not read `containsMouse` for its
   own colour: mouse hover updates the panel's cursor state at the root, and the

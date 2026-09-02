@@ -506,6 +506,20 @@ assert.strictEqual(model.MODES.length, 3)
 assert.strictEqual(model.modeSelectionAction("global", "rule"), "choose_proxy")
 assert.strictEqual(model.modeSelectionAction("global", "global"), "choose_proxy")
 assert.strictEqual(model.modeSelectionAction("direct", "rule"), "switch")
+
+// Route tests keep overseas services together before the mainland group. These
+// literal hosts are the actual requests whose routes the panel reports.
+assert.deepStrictEqual(Array.from(model.routeTestEntries(), entry => entry.host), [
+  "google.com",
+  "x.com",
+  "github.com",
+  "claude.ai",
+  "chatgpt.com",
+  "x.ai",
+  "douyin.com",
+  "weixin.com",
+  "taobao.com"
+])
 assert.strictEqual(model.modeSelectionAction("rule", "rule"), "none")
 assert.strictEqual(model.modeSelectionAction("sideways", "rule"), "none")
 

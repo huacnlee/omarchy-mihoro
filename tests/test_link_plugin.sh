@@ -33,7 +33,7 @@ PY
 
 # The plugin schedules the CLI the user installed. It must never install,
 # upgrade, or remove it, and must never ask for root.
-for file in Model.js Service.qml Panel.qml install.sh components/*.qml; do
+for file in Model.js Service.qml Panel.qml components/*.qml scripts/link-plugin.sh; do
   ! grep -Eq 'mihoro[[:space:]]+(uninstall|upgrade)' "$file" \
     || { echo "$file invokes a destructive mihoro subcommand" >&2; exit 1; }
   ! grep -Eq '\b(sudo|pkexec)\b' "$file" \
@@ -41,18 +41,21 @@ for file in Model.js Service.qml Panel.qml install.sh components/*.qml; do
 done
 
 # No shipped plugin source executes downloaded shell code.
-for file in Model.js Service.qml Panel.qml install.sh components/*.qml scripts/*; do
+for file in Model.js Service.qml Panel.qml components/*.qml scripts/*; do
   [[ ! -e "$file" ]] || ! grep -Eq 'curl .*\| *(sh|bash)' "$file" \
     || { echo "$file pipes downloaded content to a shell" >&2; exit 1; }
 done
-grep -Fq 'omarchy plugin validate' install.sh
-grep -Fq 'plugin-backups' install.sh
-[[ -x install.sh ]]
+[[ ! -e install.sh ]]
+grep -Fq 'omarchy plugin validate' scripts/link-plugin.sh
+grep -Fq 'plugin-backups' scripts/link-plugin.sh
+[[ -x scripts/link-plugin.sh ]]
+grep -Fq 'install:' Makefile
+grep -Fq 'bash scripts/link-plugin.sh' Makefile
 
 # A missing CLI is a soft condition: the panel explains it, so installing the
 # plugin must not fail because of it.
-! grep -Eq "command -v mihoro .*\{\s*$" install.sh || {
-  echo "install.sh hard-fails on a missing mihoro" >&2
+! grep -Eq "command -v mihoro .*\{\s*$" scripts/link-plugin.sh || {
+  echo "link-plugin.sh hard-fails on a missing mihoro" >&2
   exit 1
 }
 
@@ -88,17 +91,17 @@ chmod +x "$test_root/bin/omarchy-shell"
 if output="$(PATH="$test_root/bin:/usr/bin:/bin" \
   XDG_CONFIG_HOME="$test_root/config" \
   HOME="$test_root/home" \
-  ./install.sh 2>&1)"; then
-  echo "install.sh reported success when plugin enable failed" >&2
+  scripts/link-plugin.sh 2>&1)"; then
+  echo "link-plugin.sh reported success when plugin enable failed" >&2
   exit 1
 fi
 
 [[ "$output" == *"simulated enable failure"* ]] || {
-  echo "install.sh hid the plugin enable error" >&2
+  echo "link-plugin.sh hid the plugin enable error" >&2
   exit 1
 }
 [[ "$output" != *"Mihoro installed"* ]] || {
-  echo "install.sh printed its success message after plugin enable failed" >&2
+  echo "link-plugin.sh printed its success message after plugin enable failed" >&2
   exit 1
 }
 

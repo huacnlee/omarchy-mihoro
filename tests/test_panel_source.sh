@@ -379,6 +379,16 @@ refute -Fq 'onColor: systemTheme.blue' Panel.qml
 refute -Fq 'knobOnColor:' Panel.qml
 [[ ! -e components/ServiceSwitch.qml ]]
 
+# The bar icon has one safe mouse action: left-click opens the panel. Extra
+# buttons must not start/stop the service or refresh behind the user's back.
+refute -Fq 'buttonCode === Qt.RightButton' Panel.qml
+refute -Fq 'buttonCode === Qt.MiddleButton' Panel.qml
+grep -Fq 'onPressed: function(buttonCode) {' Panel.qml
+grep -Fq 'if (buttonCode === Qt.LeftButton) root.toggle()' Panel.qml
+
+# All six overseas route checks stay above the mainland separator.
+grep -Fq 'visible: index === 5' components/RouteTestSection.qml
+
 # IPC is how the rest of Omarchy drives the panel.
 grep -Fq 'function mode(value: string): string' Panel.qml
 grep -Fq 'function status(): string' Panel.qml

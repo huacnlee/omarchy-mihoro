@@ -28,6 +28,20 @@ function modeSelectionAction(next, current) {
   return wanted === String(current || "").toLowerCase() ? "none" : "switch"
 }
 
+function routeTestEntries() {
+  return [
+    { label: "Google", host: "google.com", result: "Testing..." },
+    { label: "X", host: "x.com", result: "Waiting..." },
+    { label: "GitHub", host: "github.com", result: "Waiting..." },
+    { label: "Claude", host: "claude.ai", result: "Waiting..." },
+    { label: "ChatGPT", host: "chatgpt.com", result: "Waiting..." },
+    { label: "xAI", host: "x.ai", result: "Waiting..." },
+    { label: "Douyin", host: "douyin.com", result: "Waiting..." },
+    { label: "Wechat", host: "weixin.com", result: "Waiting..." },
+    { label: "Taobao", host: "taobao.com", result: "Waiting..." }
+  ]
+}
+
 // ------------------------------------------------------------------ the CLI
 //
 // mihoro owns the mihomo binary, the systemd unit, and the subscription

@@ -295,9 +295,7 @@ Panel {
       }
     }
     onPressed: function(buttonCode) {
-      if (buttonCode === Qt.RightButton) mihoro.toggleService()
-      else if (buttonCode === Qt.MiddleButton) mihoro.refresh()
-      else root.toggle()
+      if (buttonCode === Qt.LeftButton) root.toggle()
     }
   }
 

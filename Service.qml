@@ -226,14 +226,7 @@ Item {
   }
 
   function routeTestEntries() {
-    return [
-      { label: "Google", host: "google.com", result: "Testing..." },
-      { label: "X", host: "x.com", result: "Waiting..." },
-      { label: "GitHub", host: "github.com", result: "Waiting..." },
-      { label: "Douyin", host: "douyin.com", result: "Waiting..." },
-      { label: "Wechat", host: "weixin.com", result: "Waiting..." },
-      { label: "Taobao", host: "taobao.com", result: "Waiting..." }
-    ]
+    return Model.routeTestEntries()
   }
 
   function setRouteTestResult(index, result) {

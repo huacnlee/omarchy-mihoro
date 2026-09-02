@@ -94,7 +94,7 @@ Column {
       }
 
       PanelSeparator {
-        visible: index === 2
+        visible: index === 5
         width: parent.width
         foreground: root.textColor
       }
