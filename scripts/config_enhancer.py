@@ -7,6 +7,7 @@ import binascii
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -97,8 +98,27 @@ def read_mihoro_url(path):
     return url
 
 
-def download(url):
-    request = urllib.request.Request(url, headers={"User-Agent": "mihoro"})
+# The same client name `mihoro update --config` sends, so the two update paths
+# identify identically to the provider. Falls back to mihoro's own default when
+# the key is absent, empty, or the file cannot be read.
+DEFAULT_USER_AGENT = "mihoro"
+
+
+def read_user_agent(path):
+    if path is None:
+        return DEFAULT_USER_AGENT
+    try:
+        value = tomllib.loads(path.read_text()).get("mihoro_user_agent", "")
+    except (OSError, tomllib.TOMLDecodeError):
+        return DEFAULT_USER_AGENT
+    # The value becomes a request header: a hand-edited file must not smuggle
+    # extra ones in on a line break.
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", str(value)).strip()
+    return text or DEFAULT_USER_AGENT
+
+
+def download(url, user_agent):
+    request = urllib.request.Request(url, headers={"User-Agent": user_agent})
     with urllib.request.urlopen(request, timeout=30) as response:
         return response.read()
 
@@ -156,7 +176,7 @@ def main():
                 url = read_subscription_url(args.subscriptions, args.subscription_id)
             else:
                 raise ValueError("mihoro.toml is required for an update.")
-            incoming_raw = download(url)
+            incoming_raw = download(url, read_user_agent(args.mihoro_config))
         candidate = load_yaml_bytes(incoming_raw)
         for key in MANAGED_KEYS:
             if key in current:
