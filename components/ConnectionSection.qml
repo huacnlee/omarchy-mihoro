@@ -16,9 +16,6 @@ Column {
   required property var service
   required property color textColor
   required property string panelFontFamily
-  property bool tunCursor: false
-
-  signal tunHovered(bool isHovered)
 
   readonly property bool live: service.apiState === "ok" && service.serviceActive
   property bool editingProxy: false
@@ -291,58 +288,20 @@ Column {
       value: Model.formatPorts(root.service.config, root.service.liveConfigs)
     }
 
-    // With a tun field the state is switchable, so the row is a toggle; the
-    // read-only "—" remains for cores that report no tun config at all. The
-    // switch patches the running core only — mihoro.toml has no tun key, so a
-    // restart restores whatever config.yaml says, and the tooltip says so.
+    // TUN is a stat here and an action in the panel menu. A switch on this
+    // row put a state change one stray click away inside a block that is
+    // otherwise read-only, and the change is not even persistent: the PATCH
+    // reaches the running core, mihoro.toml has no tun key, and a restart
+    // restores whatever config.yaml says.
     StatRow {
       width: parent.width
-      visible: !root.service.liveConfigs || root.service.liveConfigs.tunEnabled === null
       textColor: root.textColor
       panelFontFamily: root.panelFontFamily
       label: "TUN"
-      value: "—"
-    }
-
-    Item {
-      width: parent.width
-      visible: root.service.liveConfigs && root.service.liveConfigs.tunEnabled !== null
-      implicitHeight: tunSwitch.implicitHeight
-
-      Text {
-        anchors.left: parent.left
-        anchors.verticalCenter: parent.verticalCenter
-        text: "TUN"
-        color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.55)
-        font.family: root.panelFontFamily
-        font.pixelSize: Style.font.caption
-      }
-
-      ToggleSwitch {
-        id: tunSwitch
-        anchors.right: parent.right
-        checked: root.service.pendingTun !== -1
-          ? root.service.pendingTun === 1
-          : (root.service.liveConfigs ? root.service.liveConfigs.tunEnabled === true : false)
-        busy: root.service.pendingTun !== -1
-        // A stopped core keeps its last liveConfigs, so the row would stay
-        // live-looking while every click is discarded by toggleTun's guard.
-        interactive: root.live
-        opacity: root.live ? 1.0 : 0.45
-        // The row is a cursor target, so the switch has to draw the cursor:
-        // `hasCursor` reaches nothing else in ToggleSwitch, and suppressing
-        // the ring left the cursor invisible on this row.
-        hasCursor: root.tunCursor
-        foreground: root.textColor
-        onToggled: root.service.toggleTun()
-        onHovered: function(isHovered) { root.tunHovered(isHovered) }
-
-        PanelToolTip {
-          visible: tunSwitch.containsMouse
-          text: "Runtime only — a restart restores config.yaml"
-          fontFamily: root.panelFontFamily
-        }
-      }
+      value: root.service.tunState === null ? "—"
+        : (root.service.pendingTun !== -1
+          ? (root.service.tunState ? "Enabling…" : "Disabling…")
+          : (root.service.tunState ? "On" : "Off"))
     }
 
     StatRow {

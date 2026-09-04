@@ -188,6 +188,15 @@ Item {
     : (pendingModeProxy !== "" && pendingProxyGroup === currentProxyGroup ? pendingModeProxy
       : (mode === "rule" ? currentRuleProxy : currentGlobalProxy))
 
+  // TUN as the panel should show it: the optimistic overlay while a PATCH is in
+  // flight, the core's own answer otherwise, and null when the core reports no
+  // tun section at all. The menu label, the stat row, and the toggle all read
+  // this, so none of them can disagree about which way the switch is pointing.
+  readonly property var tunState: (liveConfigs && liveConfigs.tunEnabled !== null)
+    ? (pendingTun !== -1 ? pendingTun === 1 : liveConfigs.tunEnabled === true)
+    : null
+  readonly property bool canToggleTun: tunState !== null && connection.key === "running"
+
   readonly property bool busy: probeProcess.running || configReadProcess.running
     || actionProcess.running || modeProcess.running || proxySelectProcess.running
     || configWriteProcess.running || guideProcess.running
@@ -397,12 +406,11 @@ Item {
   // generated config.yaml says. The toggle is offered only when the live core
   // reports a tun field at all.
   function toggleTun() {
-    if (connection.key !== "running" || tunProcess.running) return
-    if (!liveConfigs || liveConfigs.tunEnabled === null) return
+    if (!canToggleTun || tunProcess.running) return
     // Toggle what is on screen, not what the last `/configs` said: the overlay
-    // outlives the PATCH by a round trip, and reading `liveConfigs` there would
+    // outlives the PATCH by a round trip, and reading `liveConfigs` here would
     // make a second press re-send the state the first one already asked for.
-    pendingTun = (pendingTun !== -1 ? pendingTun === 1 : liveConfigs.tunEnabled === true) ? 0 : 1
+    pendingTun = tunState === true ? 0 : 1
     lastError = ""
     optimismTimer.restart()
     tunProcess.command = ClashApi.setTunCommand(apiBase, config.secret, pendingTun === 1)

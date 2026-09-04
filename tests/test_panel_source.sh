@@ -92,8 +92,11 @@ refute -Fq 'root.downHistory = []' Service.qml
 refute -Eq 'bezierCurveTo|quadraticCurveTo' components/Sparkline.qml
 refute -Eq '#[0-9a-fA-F]{6}' components/Sparkline.qml
 
+# TUN reads as a stat here and acts from the menu. A switch inside an otherwise
+# read-only block put a state change one stray click away.
 grep -Fq 'label: "TUN"' components/ConnectionSection.qml
-grep -Fq 'root.service.liveConfigs.tunEnabled' components/ConnectionSection.qml
+grep -Fq 'root.service.tunState' components/ConnectionSection.qml
+refute -Fq 'ToggleSwitch {' components/ConnectionSection.qml
 
 # ---- proxy nodes ------------------------------------------------------------
 
@@ -110,17 +113,20 @@ grep -Fq 'key === "GLOBAL"' ClashApi.js
 grep -Fq 'readonly property var proxyGroups: {' Service.qml
 grep -Fq 'if (selectorGroups[i].name !== owned) out.push(selectorGroups[i])' Service.qml
 
-# The section is collapsed on every panel open: a few groups are three lines
-# each, and the panel belongs to the people who never change a node. Shut, the
-# section is one cursor target that opens it; open, each group is its own.
+# Folded away on every panel open, behind the icon beside the mode chips: a few
+# groups are three lines each, and the panel belongs to the people who never
+# change a node. Nothing of the section is on screen until it is asked for — not
+# even its header — and only the groups actually drawn are cursor targets.
 grep -Fq 'property bool nodesExpanded: false' Panel.qml
 grep -Fq 'nodesExpanded = false' Panel.qml
 grep -Fq 'expanded: root.nodesExpanded' Panel.qml
-grep -Fq 'list.push("nodes")' Panel.qml
 grep -Fq 'if (nodesExpanded)' Panel.qml
-grep -Fq 'headerCursor: root.cursorTarget === "nodes"' Panel.qml
-grep -Fq 'onToggleRequested: root.nodesExpanded = !root.nodesExpanded' Panel.qml
-grep -Fq 'CursorSurface {' components/NodesSection.qml
+refute -Fq 'list.push("nodes")' Panel.qml
+grep -Fq 'nodesAvailable: mihoro.proxyGroups.length > 0' Panel.qml
+grep -Fq 'onNodesToggleRequested: root.nodesExpanded = !root.nodesExpanded' Panel.qml
+grep -Fq 'id: nodesButton' components/ModeSection.qml
+grep -Fq 'name: root.nodesExpanded ? "arrow-up" : "arrow-down"' components/ModeSection.qml
+refute -Fq 'CursorSurface' components/NodesSection.qml
 
 # A pick is a draft until Apply, exactly as the mode row's proxy is. Switching
 # on selection fires a PUT at whatever the search filter lands on mid-typing.
@@ -190,32 +196,27 @@ grep -Fq 'readonly property bool searchOpen' components/NodesSection.qml
 grep -Fq 'key === "n"' Panel.qml
 grep -Fq 'nodesSection.activateGroup(target.substring(5))' Panel.qml
 
-# Every mouse-reachable action has a key: `d` tests the group under the cursor,
-# `u` toggles TUN, and the TUN row is a cursor target.
+# Every mouse-reachable action has a key: `d` tests the group under the cursor
+# and `u` toggles TUN, whose mouse path is the menu row.
 grep -Fq 'key === "d"' Panel.qml
 grep -Fq 'key === "u"' Panel.qml
 grep -Fq 'mihoro.testGroupDelay(root.cursorTarget.substring(5))' Panel.qml
-grep -Fq 'list.push("tun")' Panel.qml
-grep -Fq 'tunCursor: root.cursorTarget === "tun"' Panel.qml
-grep -Fq 'hasCursor: root.tunCursor' components/ConnectionSection.qml
-# `hasCursor` reaches nothing in ToggleSwitch but the cursor ring, so
-# suppressing the ring left the cursor invisible on the row it is aimed at. The
-# target itself is only there while the core answers, since the switch is inert
-# otherwise.
-refute -Fq 'cursorRing: false' components/ConnectionSection.qml
-grep -Fq '&& mihoro.connection.key === "running") list.push("tun")' Panel.qml
+refute -Fq 'list.push("tun")' Panel.qml
+grep -Fq 'text: root.tunEnabled ? "Disable TUN" : "Enable TUN"' components/PanelMenu.qml
+grep -Fq 'onTunRequested: mihoro.toggleTun()' Panel.qml
+grep -Fq 'canToggleTun: mihoro.canToggleTun' Panel.qml
 
 # The TUN toggle patches the running core only; there is no tun key in
 # mihoro.toml to persist it into. A stopped core keeps its last liveConfigs, so
 # the switch goes quiet with the service rather than discarding clicks.
 grep -Fq 'ClashApi.setTunCommand' Service.qml
 grep -Fq 'function toggleTun()' Service.qml
-# Toggle what is on screen: the overlay outlives the PATCH by a round trip, and
-# reading liveConfigs there made a second press re-send the first one's value.
-grep -Fq 'pendingTun = (pendingTun !== -1 ? pendingTun === 1 : liveConfigs.tunEnabled === true) ? 0 : 1' Service.qml
-grep -Fq 'onToggled: root.service.toggleTun()' components/ConnectionSection.qml
-grep -Fq 'ToggleSwitch {' components/ConnectionSection.qml
-grep -Fq 'interactive: root.live' components/ConnectionSection.qml
+# One effective state feeds the stat row, the menu label, and the toggle, so
+# none of them can disagree. Toggling reads it rather than liveConfigs: the
+# overlay outlives the PATCH by a round trip, and reading the last /configs
+# there made a second press re-send the first one's value.
+grep -Fq 'readonly property var tunState:' Service.qml
+grep -Fq 'pendingTun = tunState === true ? 0 : 1' Service.qml
 refute -Fq 'tun' MihoroConfig.js
 # An authoritative TUN value that disagrees with the click still clears the
 # overlay once the PATCH has finished — otherwise a restart that restored

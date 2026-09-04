@@ -54,18 +54,11 @@ Panel {
     if (!mihoro.initialized) return ["setup"]
     var list = ["power"]
     if (mihoro.canSwitchMode) list.push("mode")
-    // Shut, the nodes section is one target that opens it; open, each group
-    // is its own. Keeping the group targets while they are hidden would walk
-    // the cursor through rows nobody can see.
-    if (mihoro.proxyGroups.length > 0) {
-      list.push("nodes")
-      if (nodesExpanded)
-        for (var i = 0; i < mihoro.proxyGroups.length; i++) list.push("node:" + mihoro.proxyGroups[i].name)
-    }
-    // Only while the core answers: the switch is inert otherwise, and an inert
-    // target is a place the cursor lands and nothing happens.
-    if (mihoro.liveConfigs && mihoro.liveConfigs.tunEnabled !== null
-        && mihoro.connection.key === "running") list.push("tun")
+    // Only the groups on screen: the section is opened from the mode row's
+    // icon, and keeping targets for hidden rows would walk the cursor through
+    // rows nobody can see.
+    if (nodesExpanded)
+      for (var i = 0; i < mihoro.proxyGroups.length; i++) list.push("node:" + mihoro.proxyGroups[i].name)
     list.push("subscription")
     return list
   }
@@ -120,9 +113,7 @@ Panel {
     var target = cursorTarget
     if (target === "power") mihoro.toggleService()
     else if (target === "mode") root.requestMode(Model.MODES[modeCursor].value)
-    else if (target === "nodes") root.nodesExpanded = !root.nodesExpanded
     else if (target.indexOf("node:") === 0) nodesSection.activateGroup(target.substring(5))
-    else if (target === "tun") mihoro.toggleTun()
     else if (target === "subscription") root.openSubscriptionPage()
     else if (target.indexOf("sub:") === 0) mihoro.selectSubscription(target.substring(4))
     else if (target === "add") subscription.beginAdd()
@@ -492,6 +483,9 @@ Panel {
                 canOpenRules: mihoro.activeSubscriptionId !== "" && mihoro.rulesLoaded
                   && !mihoro.applying
                 canTestRoutes: mihoro.initialized && mihoro.serviceActive && mihoro.apiState === "ok"
+                canToggleTun: mihoro.canToggleTun
+                tunEnabled: mihoro.tunState === true
+                onTunRequested: mihoro.toggleTun()
                 onRestartRequested: mihoro.restartService()
                 onCopyProxyRequested: mihoro.copyProxyExport()
                 onInstallRequested: root.openInstallPage()
@@ -620,6 +614,9 @@ Panel {
             onGlobalRequested: mihoro.refreshProxies()
             onProxyRequested: function(value) { mihoro.selectGlobalProxy(value) }
             onSubscriptionRequested: root.openSubscriptionPage()
+            nodesAvailable: mihoro.proxyGroups.length > 0
+            nodesExpanded: root.nodesExpanded
+            onNodesToggleRequested: root.nodesExpanded = !root.nodesExpanded
             onChipHovered: function(index, isHovered) {
               if (!isHovered) {
                 if (root.cursorTarget === "mode") root.cursorActive = false
@@ -633,13 +630,14 @@ Panel {
           }
 
           PanelSeparator {
-            visible: root.panelPage === 1 && mihoro.initialized && mihoro.proxyGroups.length > 0
+            visible: nodesSection.visible
             foreground: root.foreground
           }
 
           NodesSection {
             id: nodesSection
-            visible: root.panelPage === 1 && mihoro.initialized && mihoro.proxyGroups.length > 0
+            visible: root.panelPage === 1 && mihoro.initialized
+              && mihoro.proxyGroups.length > 0 && root.nodesExpanded
             width: parent.width
             textColor: root.foreground
             panelFontFamily: root.fontFamily
@@ -650,18 +648,9 @@ Panel {
             testingGroup: mihoro.testingDelayGroup
             switchable: mihoro.connection.key === "running"
             cursorIndex: root.nodeCursorIndex
-            headerCursor: root.cursorTarget === "nodes"
             expanded: root.nodesExpanded
             onNodeRequested: function(group, name) { mihoro.selectNode(group, name) }
             onTestRequested: function(group) { mihoro.testGroupDelay(group) }
-            onToggleRequested: root.nodesExpanded = !root.nodesExpanded
-            onHeaderHovered: function(isHovered) {
-              if (!isHovered) return
-              var index = root.targets.indexOf("nodes")
-              if (index < 0) return
-              root.cursorActive = true
-              root.cursorIndex = index
-            }
             onDropdownHovered: function(index, isHovered) {
               if (!isHovered) return
               if (mihoro.proxyGroups.length === 0) return
@@ -681,14 +670,6 @@ Panel {
             service: mihoro
             textColor: root.foreground
             panelFontFamily: root.fontFamily
-            tunCursor: root.cursorTarget === "tun"
-            onTunHovered: function(isHovered) {
-              if (!isHovered) return
-              var index = root.targets.indexOf("tun")
-              if (index < 0) return
-              root.cursorActive = true
-              root.cursorIndex = index
-            }
           }
 
           SubscriptionSection {

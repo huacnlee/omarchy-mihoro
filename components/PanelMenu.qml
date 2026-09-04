@@ -19,8 +19,11 @@ Item {
   property bool canCopyProxy: false
   property bool canOpenRules: false
   property bool canTestRoutes: false
+  property bool canToggleTun: false
+  property bool tunEnabled: false
 
   signal restartRequested()
+  signal tunRequested()
   signal copyProxyRequested()
   signal installRequested()
   signal subscriptionRequested()
@@ -135,6 +138,18 @@ Item {
           anchors.verticalCenter: parent.verticalCenter
           width: parent.width
           foreground: root.textColor
+        }
+      }
+
+      MenuRow {
+        // The verb, not the state: a row that read "TUN" would leave the user
+        // to guess which way activating it points. Runtime only — a restart
+        // brings back whatever config.yaml says.
+        text: root.tunEnabled ? "Disable TUN" : "Enable TUN"
+        enabled: root.canToggleTun
+        onActivated: {
+          menu.close()
+          root.tunRequested()
         }
       }
 

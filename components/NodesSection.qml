@@ -9,10 +9,11 @@ import "../Model.js" as Model
 // the core's probe history until the group's test button asks for fresh ones,
 // and the list sorts fastest-first once it has them.
 //
-// Collapsed by default. A subscription with a handful of groups is three lines
-// each, which would push CONNECTION off the bottom of the panel for everyone,
-// including the majority who never change a node. The header is the disclosure
-// and the section's single cursor target while it is shut.
+// Folded away by default. A subscription with a handful of groups is three
+// lines each, which would push CONNECTION off the bottom of the panel for
+// everyone, including the majority who never change a node. The disclosure is
+// the icon on the mode row, so nothing of this section is on screen — not even
+// a header — until it is asked for.
 //
 // A pick is a draft until Apply, as it is for the mode row's proxy — switching
 // on selection would fire a PUT at whatever the search filter happened to land
@@ -35,16 +36,13 @@ Column {
   // doomed PUT and the data on screen is stale anyway.
   property bool switchable: true
   property int cursorIndex: -1
-  property bool headerCursor: false
   // Owned by the panel, which needs it to build the cursor target list before
-  // this section exists.
+  // this section exists, and which puts the disclosure on the mode row.
   property bool expanded: false
 
   signal nodeRequested(string group, string name)
   signal testRequested(string group)
-  signal toggleRequested()
   signal dropdownHovered(int index, bool isHovered)
-  signal headerHovered(bool isHovered)
 
   // While any group's picker is open its search field owns the keys; the
   // panel reads this to suspend its own shortcuts, as it does for the URL
@@ -114,63 +112,36 @@ Column {
 
   spacing: Style.space(8)
 
-  CursorSurface {
-    id: header
-    width: parent.width
-    implicitHeight: Math.max(nodesHeader.implicitHeight, chevron.height) + Style.space(10)
-    foreground: root.textColor
-    accent: root.accentColor
-    hasCursor: root.headerCursor
-
-    MouseArea {
-      anchors.fill: parent
-      hoverEnabled: true
-      cursorShape: Qt.PointingHandCursor
-      onContainsMouseChanged: root.headerHovered(containsMouse)
-      onClicked: root.toggleRequested()
-    }
-
-    PanelSectionHeader {
-      id: nodesHeader
-      anchors.left: parent.left
-      anchors.leftMargin: Style.space(6)
-      anchors.verticalCenter: parent.verticalCenter
-      text: "PROXY NODES"
-      foreground: root.textColor
-      fontFamily: root.panelFontFamily
-    }
-
-    Text {
-      id: headerNote
-      anchors.right: chevron.left
-      anchors.rightMargin: Style.space(6)
-      anchors.verticalCenter: parent.verticalCenter
-      // The count is what the section is worth opening for while it is shut;
-      // a running test outranks it, since that is the one thing in here that
-      // finishes on its own.
-      text: root.testingGroup !== "" ? "testing…"
-        : (root.expanded ? "" : root.groups.length + (root.groups.length === 1 ? " group" : " groups"))
-      color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.55)
-      font.family: root.panelFontFamily
-      font.pixelSize: Style.font.caption
-    }
-
-    ActionIcon {
-      id: chevron
-      anchors.right: parent.right
-      anchors.rightMargin: Style.space(6)
-      anchors.verticalCenter: parent.verticalCenter
-      name: root.expanded ? "arrow-up" : "arrow-down"
-      iconSize: Style.font.icon
-      color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.55)
-    }
-  }
-
   Column {
     id: groupList
     width: parent.width
     spacing: Style.space(8)
     visible: root.expanded
+
+    Item {
+      width: parent.width
+      implicitHeight: Math.max(nodesHeader.implicitHeight, testingLabel.implicitHeight)
+
+      PanelSectionHeader {
+        id: nodesHeader
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        text: "PROXY NODES"
+        foreground: root.textColor
+        fontFamily: root.panelFontFamily
+      }
+
+      Text {
+        id: testingLabel
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        visible: root.testingGroup !== ""
+        text: "testing…"
+        color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.55)
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.caption
+      }
+    }
 
     Repeater {
       id: groupRepeater

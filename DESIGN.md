@@ -94,11 +94,18 @@ credential.
   terminal nobody asked for. It carries the plain foreground, not `urgent`: the
   failure is the notice line above it, and the button is an offer.
 - **Collapsing is not navigation.** A page is always reached by name; a section
-  inside one may still fold. PROXY NODES ships shut: a subscription's groups run
-  three lines each and would push the connection stats off the bottom of the
-  panel for everyone who never changes a node. What a fold hides is a detour,
-  never state the page is accountable for — the node actually carrying traffic
-  stays on the connection row either way.
+  inside one may still fold behind an icon. PROXY NODES ships folded into the
+  icon beside the mode chips: a subscription's groups run three lines each and
+  would push the connection stats off the bottom of the panel for everyone who
+  never changes a node. A folded section leaves nothing on screen, header
+  included. What a fold hides is a detour, never state the page is accountable
+  for — the node actually carrying traffic stays on the connection row either
+  way.
+- **A state change does not sit inside a read-only block.** The connection stats
+  are there to be read, so TUN reports its state there and is switched from the
+  panel menu, where the other actions are. A toggle in that column put a change
+  to the running core one stray click from a block nobody expects to be
+  clickable.
 - **A node switch is staged until `Apply`,** like a local rule and like the mode
   row's own proxy. A picker that switched on selection would fire a PUT at
   whatever its search filter happened to land on while the user was still
@@ -140,17 +147,18 @@ credential.
   order. A panel this shallow does not need per-section cursors. Node groups are
   `node:<group>` targets in that list, so the cursor walks power, modes, nodes,
   and the subscription in the order they are drawn.
-- A section that is collapsed contributes exactly one target — its header, which
-  opens it. Keeping the hidden rows' targets would walk the cursor through rows
-  nobody can see. `nodes` is that target for the proxy nodes; `n` opens the
-  section as well as aiming at it.
+- A folded section contributes no targets at all — not the rows it hides, which
+  would walk the cursor through things nobody can see, and not its own
+  disclosure, which is a right-edge icon and therefore never a target. `n` opens
+  the proxy nodes and lands the cursor on the first group.
 - Right-edge action buttons are not cursor targets; the row they sit in is.
 - Every action the mouse can reach has a key: the letter for the page's own
   actions, digits for a list.
 - An open node picker owns the keys — its search filter accepts every letter the
   panel binds — so the key catcher yields to it as it does to the URL editor.
-- `d` tests the delays of the group under the cursor, and `u` toggles TUN. A
-  pick made while a switch is in flight is queued (latest wins), never dropped.
+- `d` tests the delays of the group under the cursor, and `u` toggles TUN, whose
+  mouse path is the menu row rather than a control on the page. A pick made while
+  a switch is in flight is queued (latest wins), never dropped.
   Enter on a group confirms a drafted pick, or opens the picker when there is
   none, so the keyboard reaches Apply without a key of its own.
 - The poll watchdog reaps polls only. Its fuse is tied to the refresh that armed
