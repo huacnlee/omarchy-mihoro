@@ -31,7 +31,13 @@ def run_enhancer(root, *extra, expect=0):
         "--systemctl", str(root / "systemctl"),
         *extra,
     ]
-    result = subprocess.run(command, text=True, capture_output=True)
+    # The subscription server in the user-agent test is on loopback, and
+    # urllib honours http_proxy without bypassing 127.0.0.1 — only no_proxy
+    # does. On any machine that exports one (this repo's own developers, whose
+    # whole subject is a local proxy) the fetch would go to the proxy and the
+    # test would fail for a reason that has nothing to do with the code.
+    environment = {**os.environ, "no_proxy": "*", "NO_PROXY": "*"}
+    result = subprocess.run(command, text=True, capture_output=True, env=environment)
     assert result.returncode == expect, result.stderr
     return result
 
@@ -178,6 +184,22 @@ with tempfile.TemporaryDirectory() as temp:
         run_enhancer(root, "update", "--mihoro-config", str(root / "mihoro.toml"),
                      "--no-restart")
         assert seen["agent"] == "clash/1.0 x-inject: yes"
+
+        # Header values are encoded latin-1, so a name written in Chinese would
+        # raise UnicodeEncodeError from inside urlopen and fail the whole
+        # update with a codec message. mihoro's own fetch refuses the same
+        # value, so the default is what keeps the two paths identifying alike.
+        (root / "mihoro.toml").write_text(
+            mihoro_toml('mihoro_user_agent = "小猫咪/1.0"\n'))
+        run_enhancer(root, "update", "--mihoro-config", str(root / "mihoro.toml"),
+                     "--no-restart")
+        assert seen["agent"] == "mihoro"
+
+        # A value that is not a string is a mis-edit, not a client name.
+        (root / "mihoro.toml").write_text(mihoro_toml("mihoro_user_agent = true\n"))
+        run_enhancer(root, "update", "--mihoro-config", str(root / "mihoro.toml"),
+                     "--no-restart")
+        assert seen["agent"] == "mihoro"
     finally:
         server.shutdown()
 

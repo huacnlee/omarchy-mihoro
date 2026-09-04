@@ -111,10 +111,26 @@ def read_user_agent(path):
         value = tomllib.loads(path.read_text()).get("mihoro_user_agent", "")
     except (OSError, tomllib.TOMLDecodeError):
         return DEFAULT_USER_AGENT
+    # A non-string value is a mis-edit, not a client name: mihoro's own
+    # deserializer refuses it outright rather than stringifying it, and
+    # `str(True)` would put the Python spelling of a bool on the wire.
+    if not isinstance(value, str):
+        return DEFAULT_USER_AGENT
     # The value becomes a request header: a hand-edited file must not smuggle
     # extra ones in on a line break.
-    text = re.sub(r"[\x00-\x1f\x7f]+", " ", str(value)).strip()
-    return text or DEFAULT_USER_AGENT
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", value).strip()
+    if not text:
+        return DEFAULT_USER_AGENT
+    # http.client encodes header values as latin-1, so anything outside it —
+    # a name written in Chinese, say — raises UnicodeEncodeError from inside
+    # urlopen and fails the whole update with a codec message. mihoro's own
+    # fetch would refuse the same value, so falling back keeps the two paths
+    # identifying alike instead of one of them breaking.
+    try:
+        text.encode("latin-1")
+    except UnicodeEncodeError:
+        return DEFAULT_USER_AGENT
+    return text
 
 
 def download(url, user_agent):
