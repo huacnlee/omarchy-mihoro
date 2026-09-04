@@ -329,7 +329,9 @@ Column {
         // live-looking while every click is discarded by toggleTun's guard.
         interactive: root.live
         opacity: root.live ? 1.0 : 0.45
-        cursorRing: false
+        // The row is a cursor target, so the switch has to draw the cursor:
+        // `hasCursor` reaches nothing else in ToggleSwitch, and suppressing
+        // the ring left the cursor invisible on this row.
         hasCursor: root.tunCursor
         foreground: root.textColor
         onToggled: root.service.toggleTun()

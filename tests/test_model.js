@@ -563,7 +563,7 @@ assert.strictEqual(tied.map(node => node.name).join(","), "x,y")
 // modelData) arrives as a sequence wrapper: `length` and indexing work and
 // `instanceof Array` is even true, but `Array.isArray` is false. The sort has
 // to accept it — this exact shape emptied every node picker in the panel
-// (probe-arrayisarray.qml reproduces the wrapper in a real QML engine).
+// (tests/probe-arrayisarray.qml reproduces the wrapper in a real QML engine).
 const qmlSequence = Object.create(Array.prototype)
 qmlSequence[0] = { name: "wrapped-slow", delay: 212 }
 qmlSequence[1] = { name: "wrapped-fast", delay: 39 }

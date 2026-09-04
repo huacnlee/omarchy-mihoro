@@ -260,11 +260,12 @@ function findRoute(body, host) {
 // `Proxy`. Resolve the payload's real key for the wanted name — exact match
 // first, then case-insensitive — so both parsing and switching address the
 // group the core actually has. Null when nothing matches.
-function resolveGroupName(body, wanted) {
-  var payload = parseJson(body)
-  var proxies = payload && payload.proxies && typeof payload.proxies === "object"
-    ? payload.proxies : null
-  if (!proxies) return null
+//
+// Split from `resolveGroupName` so a caller that has already parsed the body
+// does not parse it a second time: `/proxies` is the largest payload the panel
+// reads, and every extra parse is a synchronous cost on the GUI thread.
+function groupKeyIn(proxies, wanted) {
+  if (!proxies || typeof proxies !== "object") return null
   var name = String(wanted || "")
   if (name === "") return null
   if (Object.prototype.hasOwnProperty.call(proxies, name)) return name
@@ -276,11 +277,16 @@ function resolveGroupName(body, wanted) {
   return null
 }
 
+function resolveGroupName(body, wanted) {
+  var payload = parseJson(body)
+  return groupKeyIn(payload ? payload.proxies : null, wanted)
+}
+
 function parseProxyGroup(body, groupName) {
   var payload = parseJson(body)
   if (!payload) return null
   var proxies = payload.proxies
-  var resolved = resolveGroupName(body, groupName)
+  var resolved = groupKeyIn(proxies, groupName)
   var group = resolved !== null ? proxies[resolved] : null
   var all = group && group.all instanceof Array ? group.all : []
   var options = []

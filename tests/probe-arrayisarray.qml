@@ -1,6 +1,6 @@
 import QtQuick
 import Quickshell
-import "Model.js" as Model
+import "../Model.js" as Model
 
 // Probe: does a nested array survive the Instantiator/Repeater modelData
 // boundary as a real JS Array? Reproduces the panel path

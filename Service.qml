@@ -63,7 +63,7 @@ Item {
   // Selector groups other than GLOBAL (which the mode chips own), each with
   // its nodes and their last measured delay. Filled from the same `/proxies`
   // payload as the global options.
-  property var proxyGroups: []
+  property var selectorGroups: []
   property string testingDelayGroup: ""
   property var ruleProxyOptions: []
   property string currentRuleProxy: ""
@@ -167,6 +167,21 @@ Item {
     : (liveConfigs && liveConfigs.mode !== "" ? liveConfigs.mode : config.mode)
   readonly property string currentProxyGroup: mode === "rule" ? ruleProxyGroup
     : (mode === "global" ? "GLOBAL" : "")
+
+  // The nodes section lists every Selector group the mode row does not already
+  // own. Two pickers over one group would show two answers between a switch
+  // and the next refresh, and their PUTs would race — GLOBAL was excluded at
+  // parse time for exactly that reason, and in rule mode the rule group needs
+  // the same treatment. Derived rather than filtered at parse time so a mode
+  // switch moves the group in or out of the list at once, without waiting for
+  // the next `/proxies`.
+  readonly property var proxyGroups: {
+    var owned = currentProxyGroup
+    var out = []
+    for (var i = 0; i < selectorGroups.length; i++)
+      if (selectorGroups[i].name !== owned) out.push(selectorGroups[i])
+    return out
+  }
   readonly property var currentModeProxyOptions: mode === "rule" ? ruleProxyOptions
     : (mode === "global" ? globalProxyOptions : [])
   readonly property string currentModeProxy: mode === "direct" ? "DIRECT"
@@ -363,7 +378,14 @@ Item {
 
   function testGroupDelay(group) {
     var wanted = String(group || "")
-    if (wanted === "" || connection.key !== "running" || delayProcess.running) return
+    if (wanted === "" || connection.key !== "running") return
+    // The bolt buttons all grey out while a test runs, so only the `d` key can
+    // arrive here mid-test. Saying so beats a keypress that does nothing.
+    if (delayProcess.running) {
+      actionStatus = "Testing " + testingDelayGroup + "…"
+      actionStatusTimer.restart()
+      return
+    }
     testingDelayGroup = wanted
     lastError = ""
     delayProcess.command = ClashApi.groupDelayCommand(apiBase, config.secret, wanted)
@@ -377,7 +399,10 @@ Item {
   function toggleTun() {
     if (connection.key !== "running" || tunProcess.running) return
     if (!liveConfigs || liveConfigs.tunEnabled === null) return
-    pendingTun = liveConfigs.tunEnabled ? 0 : 1
+    // Toggle what is on screen, not what the last `/configs` said: the overlay
+    // outlives the PATCH by a round trip, and reading `liveConfigs` there would
+    // make a second press re-send the state the first one already asked for.
+    pendingTun = (pendingTun !== -1 ? pendingTun === 1 : liveConfigs.tunEnabled === true) ? 0 : 1
     lastError = ""
     optimismTimer.restart()
     tunProcess.command = ClashApi.setTunCommand(apiBase, config.secret, pendingTun === 1)
@@ -1045,7 +1070,7 @@ Item {
       root.routeOptions = ClashApi.parseRouteOptions(result.body)
       var groups = ClashApi.parseSelectorGroups(result.body)
       if (groups) {
-        root.proxyGroups = groups
+        root.selectorGroups = groups
         // The core has spoken; stop overriding with the click.
         if (root.pendingNode !== null) {
           for (var i = 0; i < groups.length; i++) {
@@ -1147,7 +1172,7 @@ Item {
       if (!delays) return
       // Absent from the map means the probe failed, and mihomo records that
       // as delay 0 — write the same value so the two paths agree.
-      var groups = root.proxyGroups.slice()
+      var groups = root.selectorGroups.slice()
       for (var i = 0; i < groups.length; i++) {
         if (groups[i].name !== group) continue
         var nodes = groups[i].nodes.slice()
@@ -1156,7 +1181,7 @@ Item {
         groups[i] = { name: groups[i].name, now: groups[i].now, nodes: nodes }
         break
       }
-      root.proxyGroups = groups
+      root.selectorGroups = groups
       root.actionStatus = "Delays updated."
       actionStatusTimer.restart()
     }

@@ -27,6 +27,12 @@ Panel {
   property int modeCursor: 0
   property int panelPage: 1
 
+  // Whether the nodes section is open. It lives here, not in the section: the
+  // cursor target list is built before that object exists, and it is what
+  // decides whether the groups are in it. Closed on every panel open — the
+  // section is a detour, not the panel's subject.
+  property bool nodesExpanded: false
+
   // One flat list of what the keyboard can reach, rebuilt from the service
   // state. A panel this shallow does not need per-section cursors: the order
   // here is the order on screen.
@@ -48,8 +54,18 @@ Panel {
     if (!mihoro.initialized) return ["setup"]
     var list = ["power"]
     if (mihoro.canSwitchMode) list.push("mode")
-    for (var i = 0; i < mihoro.proxyGroups.length; i++) list.push("node:" + mihoro.proxyGroups[i].name)
-    if (mihoro.liveConfigs && mihoro.liveConfigs.tunEnabled !== null) list.push("tun")
+    // Shut, the nodes section is one target that opens it; open, each group
+    // is its own. Keeping the group targets while they are hidden would walk
+    // the cursor through rows nobody can see.
+    if (mihoro.proxyGroups.length > 0) {
+      list.push("nodes")
+      if (nodesExpanded)
+        for (var i = 0; i < mihoro.proxyGroups.length; i++) list.push("node:" + mihoro.proxyGroups[i].name)
+    }
+    // Only while the core answers: the switch is inert otherwise, and an inert
+    // target is a place the cursor lands and nothing happens.
+    if (mihoro.liveConfigs && mihoro.liveConfigs.tunEnabled !== null
+        && mihoro.connection.key === "running") list.push("tun")
     list.push("subscription")
     return list
   }
@@ -104,7 +120,8 @@ Panel {
     var target = cursorTarget
     if (target === "power") mihoro.toggleService()
     else if (target === "mode") root.requestMode(Model.MODES[modeCursor].value)
-    else if (target.indexOf("node:") === 0) nodesSection.openGroup(target.substring(5))
+    else if (target === "nodes") root.nodesExpanded = !root.nodesExpanded
+    else if (target.indexOf("node:") === 0) nodesSection.activateGroup(target.substring(5))
     else if (target === "tun") mihoro.toggleTun()
     else if (target === "subscription") root.openSubscriptionPage()
     else if (target.indexOf("sub:") === 0) mihoro.selectSubscription(target.substring(4))
@@ -213,7 +230,11 @@ Panel {
     root.requestMode(Model.MODES[next].value)
   }
 
+  // `n` opens the section as well as aiming at it: with it shut there is
+  // nothing to put the cursor on but the header the key just acted on.
   function focusNodes() {
+    if (mihoro.proxyGroups.length === 0) return
+    nodesExpanded = true
     for (var i = 0; i < targets.length; i++) {
       if (String(targets[i]).indexOf("node:") === 0) {
         cursorActive = true
@@ -232,6 +253,7 @@ Panel {
   onOpenedChanged: if (opened) {
     subscription.cancelEdit()
     panelPage = 1
+    nodesExpanded = false
     cursorActive = false
     cursorIndex = 0
     modeCursor = Model.modeIndex(mihoro.mode)
@@ -628,8 +650,18 @@ Panel {
             testingGroup: mihoro.testingDelayGroup
             switchable: mihoro.connection.key === "running"
             cursorIndex: root.nodeCursorIndex
+            headerCursor: root.cursorTarget === "nodes"
+            expanded: root.nodesExpanded
             onNodeRequested: function(group, name) { mihoro.selectNode(group, name) }
             onTestRequested: function(group) { mihoro.testGroupDelay(group) }
+            onToggleRequested: root.nodesExpanded = !root.nodesExpanded
+            onHeaderHovered: function(isHovered) {
+              if (!isHovered) return
+              var index = root.targets.indexOf("nodes")
+              if (index < 0) return
+              root.cursorActive = true
+              root.cursorIndex = index
+            }
             onDropdownHovered: function(index, isHovered) {
               if (!isHovered) return
               if (mihoro.proxyGroups.length === 0) return

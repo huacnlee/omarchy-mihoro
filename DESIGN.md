@@ -93,6 +93,16 @@ credential.
   explains nothing. It never opens on its own: a failed update must not spawn a
   terminal nobody asked for. It carries the plain foreground, not `urgent`: the
   failure is the notice line above it, and the button is an offer.
+- **Collapsing is not navigation.** A page is always reached by name; a section
+  inside one may still fold. PROXY NODES ships shut: a subscription's groups run
+  three lines each and would push the connection stats off the bottom of the
+  panel for everyone who never changes a node. What a fold hides is a detour,
+  never state the page is accountable for — the node actually carrying traffic
+  stays on the connection row either way.
+- **A node switch is staged until `Apply`,** like a local rule and like the mode
+  row's own proxy. A picker that switched on selection would fire a PUT at
+  whatever its search filter happened to land on while the user was still
+  typing.
 - **A refused or failed action reports on the page it happened on.** A notice
   that only renders on page one turns a rejected subscription switch into the
   panel appearing to ignore the click. That was a real bug.
@@ -130,6 +140,10 @@ credential.
   order. A panel this shallow does not need per-section cursors. Node groups are
   `node:<group>` targets in that list, so the cursor walks power, modes, nodes,
   and the subscription in the order they are drawn.
+- A section that is collapsed contributes exactly one target — its header, which
+  opens it. Keeping the hidden rows' targets would walk the cursor through rows
+  nobody can see. `nodes` is that target for the proxy nodes; `n` opens the
+  section as well as aiming at it.
 - Right-edge action buttons are not cursor targets; the row they sit in is.
 - Every action the mouse can reach has a key: the letter for the page's own
   actions, digits for a list.
@@ -137,6 +151,8 @@ credential.
   panel binds — so the key catcher yields to it as it does to the URL editor.
 - `d` tests the delays of the group under the cursor, and `u` toggles TUN. A
   pick made while a switch is in flight is queued (latest wins), never dropped.
+  Enter on a group confirms a drafted pick, or opens the picker when there is
+  none, so the keyboard reaches Apply without a key of its own.
 - The poll watchdog reaps polls only. Its fuse is tied to the refresh that armed
   it, so reaping an action from it could kill a healthy delay test mid-flight;
   actions bound themselves with curl's `--max-time` instead.
