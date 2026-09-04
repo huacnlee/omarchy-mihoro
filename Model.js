@@ -517,12 +517,28 @@ function formatDelay(ms) {
   return String(Math.round(Number(ms))) + "ms"
 }
 
+// An array that crossed a QML delegate boundary (Repeater/Instantiator
+// modelData) arrives as a sequence wrapper: `length` and indexing work, and
+// `instanceof Array` is even true, but `Array.isArray` is false — it is not
+// a real JS array. `instanceof` in turn fails across realms (the tests load
+// this file into a vm context). Neither type check holds everywhere, so copy
+// by length instead of asking what the value is.
+function toArray(value) {
+  if (Array.isArray(value)) return value.slice()
+  if (!value || typeof value !== "object") return []
+  var count = Number(value.length)
+  if (!isFinite(count) || count < 0) return []
+  var out = []
+  for (var i = 0; i < count; i++) out.push(value[i])
+  return out
+}
+
 // Measured nodes fastest-first, then the never-probed, then timeouts: the
 // order someone picking a node actually wants. Ties keep the subscription's
 // own order, so the list does not shuffle between refreshes that measure
 // nothing new.
 function sortNodesByDelay(nodes) {
-  var list = Array.isArray(nodes) ? nodes.slice() : []
+  var list = toArray(nodes)
   function rank(node) {
     var state = delayState(node && node.delay)
     return state === "fast" || state === "slow" ? 0 : state === "unknown" ? 1 : 2
