@@ -167,6 +167,9 @@ Column {
         // clearing it here is what takes the buttons away again.
         property string draftNode: ""
         readonly property bool hasDraft: draftNode !== "" && draftNode !== currentNode
+        // What the picker should be showing: the draft while there is one, the
+        // core's own answer otherwise.
+        readonly property string pickerValue: draftNode !== "" ? draftNode : currentNode
 
         function openDropdown() { dropdown.open() }
         function closeDropdown() { dropdown.close() }
@@ -254,7 +257,7 @@ Column {
           showLabel: false
           enabled: root.switchable
           opacity: root.switchable ? 1.0 : 0.45
-          value: groupRow.draftNode !== "" ? groupRow.draftNode : groupRow.currentNode
+          value: groupRow.pickerValue
           options: Model.sortNodesByDelay(groupRow.group.nodes).map(function(node) {
             return { value: node.name, label: node.name, description: Model.formatDelay(node.delay) }
           })
@@ -264,7 +267,15 @@ Column {
           accent: root.accentColor
           fontFamily: root.panelFontFamily
           hasCursor: root.cursorIndex === groupRow.index
-          onChanged: function(value) { groupRow.draftNode = String(value) }
+          onChanged: function(value) {
+            groupRow.draftNode = String(value)
+            // SearchableDropdown assigns its own `value` when a row is picked,
+            // and that assignment destroys the binding installed above: after
+            // one pick the trigger stopped following anything, so Cancel
+            // cleared the draft while the picked node stayed on screen. Put the
+            // binding back each time the control breaks it.
+            dropdown.value = Qt.binding(function() { return groupRow.pickerValue })
+          }
           onHovered: function(isHovered) { root.dropdownHovered(groupRow.index, isHovered) }
         }
 

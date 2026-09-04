@@ -152,6 +152,7 @@ Column {
   }
 
   SearchableDropdown {
+    id: globalPicker
     width: parent.width
     visible: root.selectingGlobal || root.mode === "global"
     label: "GLOBAL CONNECTION"
@@ -162,7 +163,12 @@ Column {
     foreground: root.textColor
     accent: root.accentColor
     fontFamily: root.panelFontFamily
-    onChanged: function(value) { root.proxyRequested(value) }
+    onChanged: function(value) {
+      root.proxyRequested(value)
+      // Picking writes the control's own `value` and kills this binding, after
+      // which the trigger would keep showing a pick the core never accepted.
+      globalPicker.value = Qt.binding(function() { return root.currentProxy })
+    }
   }
 
   Text {

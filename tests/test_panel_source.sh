@@ -251,6 +251,12 @@ if not block or "bordered: true" not in block.group(1):
 print("proxy cancel outline ok")
 PROXY_CANCEL
 grep -Fq 'root.service.selectModeProxy(root.draftProxy)' components/ConnectionSection.qml
+# SearchableDropdown assigns its own `value` when a row is picked, which
+# destroys the binding the caller installed. Every picker puts it back, or
+# Cancel clears the draft while the picked node stays in the trigger.
+grep -Fq 'proxyPicker.value = Qt.binding(function() { return root.draftProxy })' components/ConnectionSection.qml
+grep -Fq 'globalPicker.value = Qt.binding(function() { return root.currentProxy })' components/ModeSection.qml
+grep -Fq 'dropdown.value = Qt.binding(function() { return groupRow.pickerValue })' components/NodesSection.qml
 refute -Fq 'onChanged: function(value) { root.service.selectModeProxy(value) }' components/ConnectionSection.qml
 grep -Fq 'readonly property string currentProxyGroup:' Service.qml
 grep -Fq 'ClashApi.parseProxyGroup(result.body, "PROXY")' Service.qml
@@ -350,14 +356,15 @@ grep -Fq 'iconSize: Style.space(12)' Panel.qml
 grep -Fq 'onCopyProxyRequested: mihoro.copyProxyExport()' Panel.qml
 grep -Fq 'text: "Copy proxy export"' components/PanelMenu.qml
 grep -Fq 'https://github.com/huacnlee/omarchy-mihoro' components/PanelMenu.qml
-grep -Fq 'text: "Mihoro docs..."' components/PanelMenu.qml
+# mihoro's own README is the install guide, reached from the install page; the
+# menu does not carry a second link to it.
+refute -Fq 'text: "Mihoro docs..."' components/PanelMenu.qml
+refute -Fq 'Model.INSTALL_DOCS_URL' components/PanelMenu.qml
 refute -Fq 'text: "Install Guides"' components/PanelMenu.qml
 refute -Fq 'text: "Open install guide"' components/PanelMenu.qml
-grep -Fq 'Model.INSTALL_DOCS_URL' components/PanelMenu.qml
 grep -Fq 'text: "Dashboard..."' components/PanelMenu.qml
 grep -Fq 'text: "GitHub..."' components/PanelMenu.qml
 grep -Fq 'text: "Mihoro..."; onActivated: root.openUrl(Model.PROJECT_URL)' components/PanelMenu.qml
-grep -Fq 'text: "Mihoro docs..."' components/PanelMenu.qml
 grep -Fq 'text: "Mihoro..."' components/PanelMenu.qml
 refute -Fq 'text: "mihoro"' components/PanelMenu.qml
 refute -Fq 'text: "Mihoro Docs"' components/PanelMenu.qml

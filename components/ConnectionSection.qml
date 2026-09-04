@@ -170,6 +170,7 @@ Column {
       spacing: Style.space(6)
 
       SearchableDropdown {
+        id: proxyPicker
         width: parent.width
         label: "Proxy"
         value: root.draftProxy
@@ -180,7 +181,14 @@ Column {
         accent: Color.accent
         fontFamily: root.panelFontFamily
         enabled: !root.applyingProxy
-        onChanged: function(value) { root.draftProxy = value }
+        onChanged: function(value) {
+          root.draftProxy = value
+          // The control writes its own `value` when a row is picked, which
+          // destroys this binding: without putting it back, Cancel would clear
+          // the draft while the picked node stayed in the trigger, and the next
+          // edit would open on it rather than on the current proxy.
+          proxyPicker.value = Qt.binding(function() { return root.draftProxy })
+        }
       }
 
       Row {
