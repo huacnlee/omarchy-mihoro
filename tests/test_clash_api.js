@@ -194,6 +194,23 @@ assert.deepStrictEqual(Array.from(ruleProxy.options, option => option.value), ["
 assert.strictEqual(api.parseProxyGroup('{"proxies":{}}', "PROXY").options.length, 0)
 assert.strictEqual(api.parseProxyGroup("nope", "PROXY"), null)
 
+// The group name comes from the subscription, and not every one calls it
+// `PROXY` — some ship `Proxy`. Lookups resolve the payload's real key
+// case-insensitively, because both this parse and the PUT path must address
+// the group the core actually has.
+const lowerProxy = api.parseProxyGroup(JSON.stringify({
+  proxies: {
+    GLOBAL: { type: "Selector", now: "Singapore", all: ["Singapore"] },
+    Proxy: { type: "Selector", now: "Tokyo JP", all: ["DIRECT", "Tokyo JP"] }
+  }
+}), "PROXY")
+assert.strictEqual(lowerProxy.current, "Tokyo JP")
+assert.deepStrictEqual(Array.from(lowerProxy.options, option => option.value), ["DIRECT", "Tokyo JP"])
+assert.strictEqual(api.resolveGroupName(JSON.stringify({ proxies: { Proxy: { type: "Selector" } } }), "PROXY"), "Proxy")
+assert.strictEqual(api.resolveGroupName(JSON.stringify({ proxies: { PROXY: { type: "Selector" } } }), "PROXY"), "PROXY")
+assert.strictEqual(api.resolveGroupName(JSON.stringify({ proxies: {} }), "PROXY"), null)
+assert.strictEqual(api.resolveGroupName("nope", "PROXY"), null)
+
 const routes = api.parseRouteOptions(JSON.stringify({ proxies: {
   DIRECT: { type: "Direct" },
   REJECT: { type: "Reject" },
@@ -281,5 +298,54 @@ assert.strictEqual(legacy.rate.down, 9)
 assert.strictEqual(legacy.anchor, null)
 
 assert.strictEqual(api.trafficRate(null, null, 1), null)
+
+// --------------------------------------------------------- selector groups
+//
+// What `proxy-node` reads from the same payload: every Selector group except
+// GLOBAL, each node carrying the last delay the core measured for it.
+
+const proxiesBody = JSON.stringify({
+  proxies: {
+    GLOBAL: { type: "Selector", now: "B", all: ["A", "B"] },
+    "Proxy": {
+      type: "Selector",
+      now: "A",
+      all: ["A", "B", "C"]
+    },
+    "Auto": { type: "URLTest", now: "A", all: ["A", "B"] },
+    "A": { type: "Shadowsocks", history: [{ time: "t1", delay: 120 }, { time: "t2", delay: 96 }] },
+    "B": { type: "Vmess", history: [] },
+    "C": { type: "Trojan", history: [{ time: "t3", delay: 0 }] }
+  }
+})
+
+const groups = api.parseSelectorGroups(proxiesBody)
+assert.strictEqual(groups.length, 1, "only non-GLOBAL Selector groups")
+assert.strictEqual(groups[0].name, "Proxy")
+assert.strictEqual(groups[0].now, "A")
+assert.strictEqual(groups[0].nodes.length, 3)
+assert.strictEqual(groups[0].nodes[0].name, "A")
+assert.strictEqual(groups[0].nodes[0].delay, 96, "the last history entry, not the first")
+assert.ok(Number.isNaN(groups[0].nodes[1].delay), "no history stays NaN, not 0")
+assert.strictEqual(groups[0].nodes[2].delay, 0, "a failed probe is delay 0")
+assert.strictEqual(api.parseSelectorGroups("{}"), null)
+assert.strictEqual(api.parseSelectorGroups("not json"), null)
+
+const groupDelay = api.parseGroupDelay('{"A": 96, "B": 1024}')
+assert.strictEqual(groupDelay.A, 96)
+assert.strictEqual(groupDelay.B, 1024)
+assert.strictEqual(groupDelay.C, undefined, "absent means the probe failed")
+assert.strictEqual(api.parseGroupDelay("not json"), null)
+
+const delayCmd = api.groupDelayCommand("http://127.0.0.1:9090", "s3cret", "My Group")
+assert.strictEqual(delayCmd[delayCmd.length - 1],
+  "http://127.0.0.1:9090/group/My%20Group/delay?url=http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&timeout=5000")
+assert.ok(delayCmd.some(arg => /Authorization: Bearer s3cret/.test(arg)))
+
+const tunOn = api.setTunCommand("http://127.0.0.1:9090", "", true)
+assert.strictEqual(tunOn[tunOn.length - 1], "http://127.0.0.1:9090/configs")
+assert.ok(tunOn.includes("PATCH"))
+assert.ok(tunOn.some(arg => arg === '{"tun":{"enable":true}}'))
+assert.ok(api.setTunCommand("http://127.0.0.1:9090", "", false).some(arg => arg === '{"tun":{"enable":false}}'))
 
 console.log("clash API tests passed")

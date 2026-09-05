@@ -170,6 +170,7 @@ Column {
       spacing: Style.space(6)
 
       SearchableDropdown {
+        id: proxyPicker
         width: parent.width
         label: "Proxy"
         value: root.draftProxy
@@ -180,7 +181,14 @@ Column {
         accent: Color.accent
         fontFamily: root.panelFontFamily
         enabled: !root.applyingProxy
-        onChanged: function(value) { root.draftProxy = value }
+        onChanged: function(value) {
+          root.draftProxy = value
+          // The control writes its own `value` when a row is picked, which
+          // destroys this binding: without putting it back, Cancel would clear
+          // the draft while the picked node stayed in the trigger, and the next
+          // edit would open on it rather than on the current proxy.
+          proxyPicker.value = Qt.binding(function() { return root.draftProxy })
+        }
       }
 
       Row {
@@ -288,19 +296,20 @@ Column {
       value: Model.formatPorts(root.service.config, root.service.liveConfigs)
     }
 
+    // TUN is a stat here and an action in the panel menu. A switch on this
+    // row put a state change one stray click away inside a block that is
+    // otherwise read-only, and the change is not even persistent: the PATCH
+    // reaches the running core, mihoro.toml has no tun key, and a restart
+    // restores whatever config.yaml says.
     StatRow {
       width: parent.width
       textColor: root.textColor
       panelFontFamily: root.panelFontFamily
       label: "TUN"
-      value: {
-        var liveConfig = root.service.liveConfigs
-        if (!liveConfig || liveConfig.tunEnabled === null) return "—"
-        return liveConfig.tunEnabled ? "enabled" : "disabled"
-      }
-      valueColor: root.service.liveConfigs && root.service.liveConfigs.tunEnabled === true
-        ? Color.accent
-        : root.textColor
+      value: root.service.tunState === null ? "—"
+        : (root.service.pendingTun !== -1
+          ? (root.service.tunState ? "Enabling…" : "Disabling…")
+          : (root.service.tunState ? "On" : "Off"))
     }
 
     StatRow {

@@ -23,12 +23,18 @@ Column {
   property var proxyOptions: []
   property string currentProxy: ""
   property bool selectingGlobal: false
+  // The proxy nodes section hangs off this row: it is a detour most sessions
+  // never take, so it folds into the icon beside the mode chips rather than
+  // standing as a section of its own.
+  property bool nodesAvailable: false
+  property bool nodesExpanded: false
 
   signal modeRequested(string value)
   signal globalRequested()
   signal proxyRequested(string value)
   signal chipHovered(int index, bool isHovered)
   signal subscriptionRequested()
+  signal nodesToggleRequested()
 
   readonly property var options: Model.MODES.map(function(entry) {
     return { value: entry.value, label: entry.label, tooltip: entry.hint }
@@ -70,6 +76,7 @@ Column {
       id: group
       anchors.verticalCenter: parent.verticalCenter
       width: modeControlRow.width - subscriptionButton.width - modeControlRow.spacing
+        - (nodesButton.visible ? nodesButton.width + modeControlRow.spacing : 0)
       spacing: Style.space(6)
       opacity: root.switchable ? 1.0 : 0.45
       enabled: root.switchable
@@ -107,6 +114,24 @@ Column {
     }
 
     PanelActionButton {
+      id: nodesButton
+      anchors.verticalCenter: parent.verticalCenter
+      visible: root.nodesAvailable
+      foreground: root.textColor
+      hoverColor: root.textColor
+      size: Style.space(26)
+      tooltipText: root.nodesExpanded ? "Hide proxy nodes" : "Proxy nodes"
+      onClicked: root.nodesToggleRequested()
+
+      ActionIcon {
+        anchors.centerIn: parent
+        name: root.nodesExpanded ? "arrow-up" : "arrow-down"
+        iconSize: Style.font.body
+        color: nodesButton._hot ? nodesButton.hoverColor : nodesButton.foreground
+      }
+    }
+
+    PanelActionButton {
       id: subscriptionButton
       anchors.verticalCenter: parent.verticalCenter
       foreground: root.textColor
@@ -127,6 +152,7 @@ Column {
   }
 
   SearchableDropdown {
+    id: globalPicker
     width: parent.width
     visible: root.selectingGlobal || root.mode === "global"
     label: "GLOBAL CONNECTION"
@@ -137,7 +163,12 @@ Column {
     foreground: root.textColor
     accent: root.accentColor
     fontFamily: root.panelFontFamily
-    onChanged: function(value) { root.proxyRequested(value) }
+    onChanged: function(value) {
+      root.proxyRequested(value)
+      // Picking writes the control's own `value` and kills this binding, after
+      // which the trigger would keep showing a pick the core never accepted.
+      globalPicker.value = Qt.binding(function() { return root.currentProxy })
+    }
   }
 
   Text {

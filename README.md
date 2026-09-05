@@ -6,8 +6,20 @@ Mihomo CLI client for Linux.
 <img width="320" alt="Mihoro for Omarchy" src="https://github.com/user-attachments/assets/f58b161e-389e-43bc-880a-8216c67eb863" />
 
 Use it to monitor your proxy, switch between Rule, Global, and Direct modes,
-keep several subscriptions to switch between, and prepend per-subscription
-local routing rules without losing them on automatic updates.
+pick a proxy node per group with measured delays, toggle TUN, keep several
+subscriptions to switch between, and prepend per-subscription local routing
+rules without losing them on automatic updates.
+
+## Features
+
+- Connection status, live up/down speed, and a one-minute traffic history
+- Rule / Global / Direct switching against the running core
+- Per-group proxy-node switching (`proxy-node` style): each selector group's
+  nodes with their last delay, a test button for fresh measurements, and
+  fastest-first ordering — press `n` in the panel to jump there
+- TUN toggle (runtime only; a restart restores `config.yaml`)
+- Multiple subscription URLs with switching and updates
+- Per-subscription local routing rules, prepended on every update
 
 ## Requirements
 

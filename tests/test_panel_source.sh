@@ -92,9 +92,142 @@ refute -Fq 'root.downHistory = []' Service.qml
 refute -Eq 'bezierCurveTo|quadraticCurveTo' components/Sparkline.qml
 refute -Eq '#[0-9a-fA-F]{6}' components/Sparkline.qml
 
+# TUN reads as a stat here and acts from the menu. A switch inside an otherwise
+# read-only block put a state change one stray click away.
 grep -Fq 'label: "TUN"' components/ConnectionSection.qml
-grep -Fq 'root.service.liveConfigs.tunEnabled' components/ConnectionSection.qml
+grep -Fq 'root.service.tunState' components/ConnectionSection.qml
+refute -Fq 'ToggleSwitch {' components/ConnectionSection.qml
 
+# ---- proxy nodes ------------------------------------------------------------
+
+# The panel form of `proxy-node`: every Selector group the mode row does not
+# already own gets a picker, fed from the same /proxies payload as the global
+# options.
+grep -Fq 'NodesSection {' Panel.qml
+grep -Fq 'ClashApi.parseSelectorGroups' Service.qml
+grep -Fq 'key === "GLOBAL"' ClashApi.js
+# GLOBAL is excluded at parse time; the rule group is excluded from the derived
+# list, so a mode switch moves it in or out at once. Two pickers over one group
+# would answer differently between a switch and the next refresh, and their
+# PUTs would race.
+grep -Fq 'readonly property var proxyGroups: {' Service.qml
+grep -Fq 'if (selectorGroups[i].name !== owned) out.push(selectorGroups[i])' Service.qml
+
+# Folded away on every panel open, behind the icon beside the mode chips: a few
+# groups are three lines each, and the panel belongs to the people who never
+# change a node. Nothing of the section is on screen until it is asked for — not
+# even its header — and only the groups actually drawn are cursor targets.
+grep -Fq 'property bool nodesExpanded: false' Panel.qml
+grep -Fq 'nodesExpanded = false' Panel.qml
+grep -Fq 'expanded: root.nodesExpanded' Panel.qml
+grep -Fq 'if (nodesExpanded)' Panel.qml
+refute -Fq 'list.push("nodes")' Panel.qml
+grep -Fq 'nodesAvailable: mihoro.proxyGroups.length > 0' Panel.qml
+grep -Fq 'onNodesToggleRequested: root.nodesExpanded = !root.nodesExpanded' Panel.qml
+grep -Fq 'id: nodesButton' components/ModeSection.qml
+grep -Fq 'name: root.nodesExpanded ? "arrow-up" : "arrow-down"' components/ModeSection.qml
+refute -Fq 'CursorSurface' components/NodesSection.qml
+
+# A pick is a draft until Apply, exactly as the mode row's proxy is. Switching
+# on selection fires a PUT at whatever the search filter lands on mid-typing.
+grep -Fq 'text: "Apply"' components/NodesSection.qml
+grep -Fq 'text: "Cancel"' components/NodesSection.qml
+grep -Fq 'onClicked: groupRow.apply()' components/NodesSection.qml
+grep -Fq 'root.nodeRequested(groupName, draftNode)' components/NodesSection.qml
+refute -Fq 'onChanged: function(value) { root.nodeRequested(' components/NodesSection.qml
+
+# The Repeater is keyed on group names, not on the group objects: a delegate
+# model over a JS array is rebuilt whenever its contents change, and the groups
+# carry the delays — so a delay test would destroy the open picker and the
+# draft inside it at the moment its own numbers arrived.
+grep -Fq 'readonly property var groupNames:' components/NodesSection.qml
+grep -Fq 'model: root.expanded ? root.groupNames : []' components/NodesSection.qml
+refute -Eq 'model: root\.groups *$' components/NodesSection.qml
+# Node switching aims the same endpoint at any group, not just GLOBAL.
+grep -Fq 'ClashApi.selectProxyCommand(apiBase, config.secret, wantedGroup, wantedName)' Service.qml
+grep -Fq 'mihoro.selectNode(group, name)' Panel.qml
+grep -Fq 'function node(group: string, name: string): string' Panel.qml
+
+# Node switching and delay tests are API-only: no `mihoro apply` fallback like
+# the mode switch has, so both are gated on the API actually answering, and the
+# pickers go quiet when it does not.
+grep -Fq 'if (connection.key !== "running") return' Service.qml
+grep -Fq 'if (wanted === "" || connection.key !== "running") return' Service.qml
+# The bolt buttons grey out during a test, so only `d` can arrive mid-test: it
+# says which group is busy rather than doing nothing.
+grep -Fq 'actionStatus = "Testing " + testingDelayGroup' Service.qml
+grep -Fq 'switchable: mihoro.connection.key === "running"' Panel.qml
+grep -Fq 'enabled: root.switchable' components/NodesSection.qml
+
+# A second pick while one is in flight is queued (latest wins), never dropped.
+grep -Fq '_queuedNode = { group: wantedGroup, name: wantedName }' Service.qml
+grep -Fq 'if (queued !== null) root.selectNode(queued.group, queued.name)' Service.qml
+
+# The optimistic overlay outlives the PUT: it clears when /proxies confirms it
+# or when the optimism deadline drops it — never right after the request, which
+# would snap the picker back to the stale `now`.
+sed -n '/id: optimismTimer/,/^  }/p' Service.qml | grep -Fq 'root.pendingNode = null'
+grep -Fq 'groups[i].now === root.pendingNode.name' Service.qml
+nodeSelect=$(sed -n '/id: nodeSelectProcess/,/^  }/p' Service.qml)
+[[ "$nodeSelect" != *$'root.pendingNode = null\n        root.refreshProxies()'* ]]
+
+# The watchdog is for polls, not actions: its 12s fuse is tied to the refresh
+# that armed it, not to an action's start, and would reap a healthy 10s delay
+# test. Actions bound themselves with curl's --max-time.
+watchdog=$(sed -n '/id: pollWatchdog/,/^  }/p' Service.qml)
+[[ "$watchdog" != *nodeSelectProcess* && "$watchdog" != *delayProcess* && "$watchdog" != *tunProcess* ]]
+
+# Surge-style delay tests: one group-scoped request, fastest-first ordering,
+# and delays shown in the picker.
+grep -Fq 'ClashApi.groupDelayCommand' Service.qml
+grep -Fq 'mihoro.testGroupDelay(group)' Panel.qml
+grep -Fq 'Model.sortNodesByDelay' components/NodesSection.qml
+grep -Fq 'Model.formatDelay' components/NodesSection.qml
+grep -Fq 'text: "PROXY NODES"' components/NodesSection.qml
+# Delay colours come from the theme, never from literals.
+grep -Fq 'fastColor: systemTheme.green' Panel.qml
+grep -Fq 'slowColor: systemTheme.yellow' Panel.qml
+refute -Eq '#[0-9a-fA-F]{6}' components/NodesSection.qml
+
+# An open picker owns the keys — its search filter accepts r, u, and friends —
+# and `n` jumps the cursor to the section.
+grep -Fq 'nodesSection.searchOpen' Panel.qml
+grep -Fq 'readonly property bool searchOpen' components/NodesSection.qml
+grep -Fq 'key === "n"' Panel.qml
+grep -Fq 'nodesSection.activateGroup(target.substring(5))' Panel.qml
+
+# Every mouse-reachable action has a key: `d` tests the group under the cursor
+# and `u` toggles TUN, whose mouse path is the menu row.
+grep -Fq 'key === "d"' Panel.qml
+grep -Fq 'key === "u"' Panel.qml
+grep -Fq 'mihoro.testGroupDelay(root.cursorTarget.substring(5))' Panel.qml
+refute -Fq 'list.push("tun")' Panel.qml
+grep -Fq 'text: root.tunEnabled ? "Disable TUN" : "Enable TUN"' components/PanelMenu.qml
+grep -Fq 'onTunRequested: mihoro.toggleTun()' Panel.qml
+grep -Fq 'canToggleTun: mihoro.canToggleTun' Panel.qml
+
+# The TUN toggle patches the running core only; there is no tun key in
+# mihoro.toml to persist it into. A stopped core keeps its last liveConfigs, so
+# the switch goes quiet with the service rather than discarding clicks.
+grep -Fq 'ClashApi.setTunCommand' Service.qml
+grep -Fq 'function toggleTun()' Service.qml
+# One effective state feeds the stat row, the menu label, and the toggle, so
+# none of them can disagree. Toggling reads it rather than liveConfigs: the
+# overlay outlives the PATCH by a round trip, and reading the last /configs
+# there made a second press re-send the first one's value.
+grep -Fq 'readonly property var tunState:' Service.qml
+grep -Fq 'pendingTun = tunState === true ? 0 : 1' Service.qml
+refute -Fq 'tun' MihoroConfig.js
+# An authoritative TUN value that disagrees with the click still clears the
+# overlay once the PATCH has finished — otherwise a restart that restored
+# config.yaml would hold the toggle busy forever. But a /configs that started
+# before the PATCH carries the old value, so disagreement is only believed
+# from a request younger than the last completed PATCH; a straddling one is
+# re-read.
+grep -Fq 'root._tunPatchCount += 1' Service.qml
+grep -Fq 'onStarted: root._configsTunGen = root._tunPatchCount' Service.qml
+grep -Fq 'if (root._configsTunGen !== root._tunPatchCount) {' Service.qml
+sed -n '/id: optimismTimer/,/^  }/p' Service.qml | grep -Fq 'root.pendingTun = -1'
 # The active node is a first-class connection fact. At rest it is a plain
 # label/value row; editing stages a choice until Apply, while Cancel does not
 # touch the core. Rule controls PROXY, Global controls GLOBAL, and Direct has
@@ -118,9 +251,24 @@ if not block or "bordered: true" not in block.group(1):
 print("proxy cancel outline ok")
 PROXY_CANCEL
 grep -Fq 'root.service.selectModeProxy(root.draftProxy)' components/ConnectionSection.qml
+# SearchableDropdown assigns its own `value` when a row is picked, which
+# destroys the binding the caller installed. Every picker puts it back, or
+# Cancel clears the draft while the picked node stays in the trigger.
+grep -Fq 'proxyPicker.value = Qt.binding(function() { return root.draftProxy })' components/ConnectionSection.qml
+grep -Fq 'globalPicker.value = Qt.binding(function() { return root.currentProxy })' components/ModeSection.qml
+grep -Fq 'dropdown.value = Qt.binding(function() { return groupRow.pickerValue })' components/NodesSection.qml
 refute -Fq 'onChanged: function(value) { root.service.selectModeProxy(value) }' components/ConnectionSection.qml
 grep -Fq 'readonly property string currentProxyGroup:' Service.qml
 grep -Fq 'ClashApi.parseProxyGroup(result.body, "PROXY")' Service.qml
+# The group name is the subscription's choice (`Proxy` as often as `PROXY`),
+# so the payload's real key is resolved and reused for the case-sensitive PUT.
+grep -Fq 'ClashApi.resolveGroupName(result.body, "PROXY")' Service.qml
+# Resolving the key must not re-parse the body: /proxies is the largest payload
+# the panel reads, and parseProxyGroup already has it parsed.
+grep -Fq 'groupKeyIn(proxies, groupName)' ClashApi.js
+refute -Fq 'resolveGroupName(body, groupName)' ClashApi.js
+grep -Fq 'property string ruleProxyGroup: "PROXY"' Service.qml
+grep -Fq 'mode === "rule" ? ruleProxyGroup' Service.qml
 grep -Fq 'ClashApi.selectProxyCommand(apiBase, config.secret, currentProxyGroup, wanted)' Service.qml
 
 # ---- subscriptions --------------------------------------------------------
@@ -208,14 +356,15 @@ grep -Fq 'iconSize: Style.space(12)' Panel.qml
 grep -Fq 'onCopyProxyRequested: mihoro.copyProxyExport()' Panel.qml
 grep -Fq 'text: "Copy proxy export"' components/PanelMenu.qml
 grep -Fq 'https://github.com/huacnlee/omarchy-mihoro' components/PanelMenu.qml
-grep -Fq 'text: "Mihoro docs..."' components/PanelMenu.qml
+# mihoro's own README is the install guide, reached from the install page; the
+# menu does not carry a second link to it.
+refute -Fq 'text: "Mihoro docs..."' components/PanelMenu.qml
+refute -Fq 'Model.INSTALL_DOCS_URL' components/PanelMenu.qml
 refute -Fq 'text: "Install Guides"' components/PanelMenu.qml
 refute -Fq 'text: "Open install guide"' components/PanelMenu.qml
-grep -Fq 'Model.INSTALL_DOCS_URL' components/PanelMenu.qml
 grep -Fq 'text: "Dashboard..."' components/PanelMenu.qml
 grep -Fq 'text: "GitHub..."' components/PanelMenu.qml
 grep -Fq 'text: "Mihoro..."; onActivated: root.openUrl(Model.PROJECT_URL)' components/PanelMenu.qml
-grep -Fq 'text: "Mihoro docs..."' components/PanelMenu.qml
 grep -Fq 'text: "Mihoro..."' components/PanelMenu.qml
 refute -Fq 'text: "mihoro"' components/PanelMenu.qml
 refute -Fq 'text: "Mihoro Docs"' components/PanelMenu.qml
@@ -488,5 +637,10 @@ refute -rEq 'console\.(log|warn|error).*(secret|remoteConfigUrl|remote_config_ur
   Panel.qml Service.qml components/*.qml Model.js ClashApi.js MihoroConfig.js Subscriptions.js
 # Clipboard data is written over stdin, never embedded in a command argument.
 refute -rEq 'execDetached\(.*wl-copy|bash.*wl-copy' Panel.qml Service.qml components/*.qml
+
+# The QML probe behind the sequence-wrapper fix is a test artefact, not part of
+# the plugin.
+[[ ! -e probe-arrayisarray.qml ]]
+[[ -e tests/probe-arrayisarray.qml ]]
 
 echo "panel source tests passed"

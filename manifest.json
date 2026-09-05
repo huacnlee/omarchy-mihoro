@@ -5,7 +5,7 @@
   "version": "0.2.0",
   "author": "huacnlee",
   "license": "MIT",
-  "description": "A Clash-style proxy client for Omarchy, running the Mihomo (Clash.Meta) core: connection status, live up/down speed, Rule, Global and Direct switching, and several Clash subscriptions to switch between, driven by the mihoro CLI.",
+  "description": "A Clash-style proxy client for Omarchy, running the Mihomo (Clash.Meta) core: connection status, live up/down speed, Rule, Global and Direct switching, proxy-node selection with delay tests, TUN toggling, and several Clash subscriptions to switch between, driven by the mihoro CLI.",
   "kinds": [
     "bar-widget"
   ],
@@ -15,7 +15,7 @@
   },
   "barWidget": {
     "displayName": "Mihoro",
-    "description": "A Clash-style proxy client in the bar: watch the Mihomo core, switch between Rule, Global and Direct, and keep several subscriptions to switch between.",
+    "description": "A Clash-style proxy client in the bar: watch the Mihomo core, switch between Rule, Global and Direct, pick proxy nodes by measured delay, toggle TUN, and keep several subscriptions to switch between.",
     "category": "Network",
     "aliases": [
       "mihomo",

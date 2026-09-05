@@ -60,8 +60,18 @@ Item {
   property var trafficAnchor: null
   property var globalProxyOptions: []
   property string currentGlobalProxy: ""
+  // Selector groups other than GLOBAL (which the mode chips own), each with
+  // its nodes and their last measured delay. Filled from the same `/proxies`
+  // payload as the global options.
+  property var selectorGroups: []
+  property string testingDelayGroup: ""
   property var ruleProxyOptions: []
   property string currentRuleProxy: ""
+  // The rule group as the core actually names it — usually `PROXY`, but the
+  // name comes from the subscription and some ship `Proxy`. Resolved from
+  // every /proxies payload; the PUT path is case-sensitive, so switching
+  // must use this, not a literal.
+  property string ruleProxyGroup: "PROXY"
   property var routeOptions: [
     { value: "DIRECT", label: "DIRECT" },
     { value: "REJECT", label: "REJECT" }
@@ -80,6 +90,17 @@ Item {
   property int desiredActive: -1
   property string pendingMode: ""
   property string pendingGlobalProxy: ""
+  // The node switch in flight, as `{group, name}`; null when nothing is.
+  property var pendingNode: null
+  // The TUN state asked for but not yet confirmed by a refresh; -1 means none.
+  property int pendingTun: -1
+  // A GET /configs that started before a TUN PATCH finished can exit after it
+  // carrying the old value, and read as the authoritative disagreement that
+  // clears the overlay. The generation counter marks every completed PATCH;
+  // a configs response whose start predates the latest one is re-read instead
+  // of believed.
+  property int _tunPatchCount: 0
+  property int _configsTunGen: 0
   property string pendingModeProxy: ""
   property string pendingProxyGroup: ""
   property bool globalSelectionRequested: false
@@ -144,13 +165,37 @@ Item {
   // agree except in the window between a switch and the next refresh.
   readonly property string mode: pendingMode !== "" ? pendingMode
     : (liveConfigs && liveConfigs.mode !== "" ? liveConfigs.mode : config.mode)
-  readonly property string currentProxyGroup: mode === "rule" ? "PROXY"
+  readonly property string currentProxyGroup: mode === "rule" ? ruleProxyGroup
     : (mode === "global" ? "GLOBAL" : "")
+
+  // The nodes section lists every Selector group the mode row does not already
+  // own. Two pickers over one group would show two answers between a switch
+  // and the next refresh, and their PUTs would race — GLOBAL was excluded at
+  // parse time for exactly that reason, and in rule mode the rule group needs
+  // the same treatment. Derived rather than filtered at parse time so a mode
+  // switch moves the group in or out of the list at once, without waiting for
+  // the next `/proxies`.
+  readonly property var proxyGroups: {
+    var owned = currentProxyGroup
+    var out = []
+    for (var i = 0; i < selectorGroups.length; i++)
+      if (selectorGroups[i].name !== owned) out.push(selectorGroups[i])
+    return out
+  }
   readonly property var currentModeProxyOptions: mode === "rule" ? ruleProxyOptions
     : (mode === "global" ? globalProxyOptions : [])
   readonly property string currentModeProxy: mode === "direct" ? "DIRECT"
     : (pendingModeProxy !== "" && pendingProxyGroup === currentProxyGroup ? pendingModeProxy
       : (mode === "rule" ? currentRuleProxy : currentGlobalProxy))
+
+  // TUN as the panel should show it: the optimistic overlay while a PATCH is in
+  // flight, the core's own answer otherwise, and null when the core reports no
+  // tun section at all. The menu label, the stat row, and the toggle all read
+  // this, so none of them can disagree about which way the switch is pointing.
+  readonly property var tunState: (liveConfigs && liveConfigs.tunEnabled !== null)
+    ? (pendingTun !== -1 ? pendingTun === 1 : liveConfigs.tunEnabled === true)
+    : null
+  readonly property bool canToggleTun: tunState !== null && connection.key === "running"
 
   readonly property bool busy: probeProcess.running || configReadProcess.running
     || actionProcess.running || modeProcess.running || proxySelectProcess.running
@@ -310,6 +355,66 @@ Item {
     globalSelectionRequested = false
     pendingGlobalProxy = ""
     if (pendingProxyGroup === "GLOBAL") pendingProxyGroup = ""
+  }
+
+  // Same endpoint as the GLOBAL picker, aimed at any Selector group — what
+  // `proxy-node` does from a terminal. Unlike a mode switch there is no
+  // `mihoro apply` fallback, so this runs only while the API actually answers;
+  // a stale picker against a dead API would just burn curl's timeout and
+  // report an error. A second pick while one is in flight is queued rather
+  // than dropped — latest wins, because that is where the user's eye is.
+  property var _queuedNode: null
+
+  function selectNode(group, name) {
+    var wantedGroup = String(group || "")
+    var wantedName = String(name || "")
+    if (wantedGroup === "" || wantedName === "") return
+    if (connection.key !== "running") return
+    if (nodeSelectProcess.running) {
+      _queuedNode = { group: wantedGroup, name: wantedName }
+      return
+    }
+    startNodeSelect(wantedGroup, wantedName)
+  }
+
+  function startNodeSelect(wantedGroup, wantedName) {
+    pendingNode = { group: wantedGroup, name: wantedName }
+    lastError = ""
+    optimismTimer.restart()
+    nodeSelectProcess.command = ClashApi.selectProxyCommand(apiBase, config.secret, wantedGroup, wantedName)
+    nodeSelectProcess.running = true
+  }
+
+  function testGroupDelay(group) {
+    var wanted = String(group || "")
+    if (wanted === "" || connection.key !== "running") return
+    // The bolt buttons all grey out while a test runs, so only the `d` key can
+    // arrive here mid-test. Saying so beats a keypress that does nothing.
+    if (delayProcess.running) {
+      actionStatus = "Testing " + testingDelayGroup + "…"
+      actionStatusTimer.restart()
+      return
+    }
+    testingDelayGroup = wanted
+    lastError = ""
+    delayProcess.command = ClashApi.groupDelayCommand(apiBase, config.secret, wanted)
+    delayProcess.running = true
+  }
+
+  // Runtime-only: the PATCH flips the running core's TUN device, and mihoro's
+  // TOML has no tun key to persist it into, so a restart restores whatever the
+  // generated config.yaml says. The toggle is offered only when the live core
+  // reports a tun field at all.
+  function toggleTun() {
+    if (!canToggleTun || tunProcess.running) return
+    // Toggle what is on screen, not what the last `/configs` said: the overlay
+    // outlives the PATCH by a round trip, and reading `liveConfigs` here would
+    // make a second press re-send the state the first one already asked for.
+    pendingTun = tunState === true ? 0 : 1
+    lastError = ""
+    optimismTimer.restart()
+    tunProcess.command = ClashApi.setTunCommand(apiBase, config.secret, pendingTun === 1)
+    tunProcess.running = true
   }
 
   function toggleService() {
@@ -709,6 +814,8 @@ Item {
     onTriggered: {
       root.desiredActive = -1
       root.pendingMode = ""
+      root.pendingNode = null
+      root.pendingTun = -1
     }
   }
 
@@ -872,6 +979,7 @@ Item {
     command: []
     stdout: StdioCollector { id: configsOut; waitForEnd: true }
     stderr: StdioCollector { id: configsErr; waitForEnd: true }
+    onStarted: root._configsTunGen = root._tunPatchCount
     onExited: function(exitCode) {
       var result = ClashApi.classify(exitCode, configsOut.text, configsErr.text)
       if (!result.ok) return
@@ -880,6 +988,24 @@ Item {
       root.liveConfigs = parsed
       // The core has spoken; stop overriding with the click.
       if (root.pendingMode !== "" && parsed.mode === root.pendingMode) root.pendingMode = ""
+      // Same for TUN — but a disagreeing answer is only authoritative if this
+      // request started after the PATCH finished; one that straddled it is
+      // the old state and is re-read rather than believed. While the PATCH is
+      // still in flight the overlay stays either way: tunProcess.onExited
+      // triggers the confirming refresh.
+      if (root.pendingTun === -1 || parsed.tunEnabled === null) return
+      if ((parsed.tunEnabled === true) === (root.pendingTun === 1)) {
+        root.pendingTun = -1
+        return
+      }
+      if (tunProcess.running) return
+      if (root._configsTunGen !== root._tunPatchCount) {
+        configsProcess.running = true
+        return
+      }
+      // A restart can restore config.yaml's value; an authoritative answer
+      // that never matches must not hold the toggle busy forever.
+      root.pendingTun = -1
     }
   }
 
@@ -941,6 +1067,8 @@ Item {
       var result = ClashApi.classify(exitCode, proxiesOut.text, proxiesErr.text)
       if (!result.ok) return
       var globalGroup = ClashApi.parseProxyGroup(result.body, "GLOBAL")
+      var ruleGroupName = ClashApi.resolveGroupName(result.body, "PROXY")
+      if (ruleGroupName !== null) root.ruleProxyGroup = ruleGroupName
       var ruleGroup = ClashApi.parseProxyGroup(result.body, "PROXY")
       if (!globalGroup || !ruleGroup) return
       root.globalProxyOptions = globalGroup.options
@@ -948,6 +1076,19 @@ Item {
       root.ruleProxyOptions = ruleGroup.options
       root.currentRuleProxy = ruleGroup.current
       root.routeOptions = ClashApi.parseRouteOptions(result.body)
+      var groups = ClashApi.parseSelectorGroups(result.body)
+      if (groups) {
+        root.selectorGroups = groups
+        // The core has spoken; stop overriding with the click.
+        if (root.pendingNode !== null) {
+          for (var i = 0; i < groups.length; i++) {
+            if (groups[i].name === root.pendingNode.group && groups[i].now === root.pendingNode.name) {
+              root.pendingNode = null
+              break
+            }
+          }
+        }
+      }
     }
   }
 
@@ -972,7 +1113,7 @@ Item {
       var selectedGroup = root.pendingProxyGroup
       var activateGlobal = root.globalSelectionRequested
       if (root.pendingModeProxy !== "") {
-        if (selectedGroup === "PROXY") root.currentRuleProxy = root.pendingModeProxy
+        if (selectedGroup === root.ruleProxyGroup) root.currentRuleProxy = root.pendingModeProxy
         else if (selectedGroup === "GLOBAL") root.currentGlobalProxy = root.pendingModeProxy
       }
       if (selected !== "") root.currentGlobalProxy = selected
@@ -989,6 +1130,91 @@ Item {
         }
       }
       root.refreshProxies()
+    }
+  }
+
+  Process {
+    id: nodeSelectProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: nodeSelectOut; waitForEnd: true }
+    stderr: StdioCollector { id: nodeSelectErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      var result = ClashApi.classify(exitCode, nodeSelectOut.text, nodeSelectErr.text)
+      var queued = root._queuedNode
+      root._queuedNode = null
+      if (!result.ok) {
+        root.pendingNode = null
+        root.reportError(result.message)
+      } else {
+        var pending = root.pendingNode
+        if (pending !== null) {
+          root.actionStatus = pending.group + " → " + pending.name
+          actionStatusTimer.restart()
+        }
+        // The overlay stays until /proxies confirms it (or the optimism
+        // deadline drops it): clearing here would snap the picker back to the
+        // stale `now` for the whole round trip, and for good if the refresh
+        // fails after a successful switch.
+        root.refreshProxies()
+      }
+      if (queued !== null) root.selectNode(queued.group, queued.name)
+    }
+  }
+
+  Process {
+    id: delayProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: delayOut; waitForEnd: true }
+    stderr: StdioCollector { id: delayErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      var group = root.testingDelayGroup
+      root.testingDelayGroup = ""
+      var result = ClashApi.classify(exitCode, delayOut.text, delayErr.text)
+      if (!result.ok) {
+        root.reportError(result.message)
+        return
+      }
+      var delays = ClashApi.parseGroupDelay(result.body)
+      if (!delays) return
+      // Absent from the map means the probe failed, and mihomo records that
+      // as delay 0 — write the same value so the two paths agree.
+      var groups = root.selectorGroups.slice()
+      for (var i = 0; i < groups.length; i++) {
+        if (groups[i].name !== group) continue
+        var nodes = groups[i].nodes.slice()
+        for (var j = 0; j < nodes.length; j++)
+          nodes[j] = { name: nodes[j].name, delay: delays[nodes[j].name] !== undefined ? delays[nodes[j].name] : 0 }
+        groups[i] = { name: groups[i].name, now: groups[i].now, nodes: nodes }
+        break
+      }
+      root.selectorGroups = groups
+      root.actionStatus = "Delays updated."
+      actionStatusTimer.restart()
+    }
+  }
+
+  Process {
+    id: tunProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: tunOut; waitForEnd: true }
+    stderr: StdioCollector { id: tunErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      var result = ClashApi.classify(exitCode, tunOut.text, tunErr.text)
+      if (!result.ok) {
+        root.pendingTun = -1
+        root.reportError(result.message)
+        return
+      }
+      root.actionStatus = root.pendingTun === 1 ? "TUN enabled." : "TUN disabled."
+      actionStatusTimer.restart()
+      // Mark the PATCH before refreshing: a /configs already in flight from
+      // before it carries the old value, and the generation is how that
+      // response is told apart from an authoritative disagreement.
+      root._tunPatchCount += 1
+      root.refreshApi()
     }
   }
 

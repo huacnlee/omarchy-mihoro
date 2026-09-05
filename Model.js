@@ -509,6 +509,72 @@ function sparkline(history, capacity, scalePeak) {
   return { points: points, lead: lead, peak: peak }
 }
 
+// ------------------------------------------------------------- node delays
+//
+// Surge-style reading of a delay: fast nodes are green, slow ones stand out,
+// and a failed probe is not a fast node. mihomo reports a failed probe as
+// delay 0, so 0 means timeout — a node never probed is NaN and stays "unknown".
+
+var DELAY_FAST_MS = 800
+
+function delayState(ms) {
+  var delay = Number(ms)
+  if (!isFinite(delay)) return "unknown"
+  if (delay <= 0) return "timeout"
+  return delay <= DELAY_FAST_MS ? "fast" : "slow"
+}
+
+function formatDelay(ms) {
+  var state = delayState(ms)
+  if (state === "unknown") return "—"
+  if (state === "timeout") return "timeout"
+  return String(Math.round(Number(ms))) + "ms"
+}
+
+// An array that crossed a QML delegate boundary (Repeater/Instantiator
+// modelData) arrives as a sequence wrapper: `length` and indexing work, and
+// `instanceof Array` is even true, but `Array.isArray` is false — it is not
+// a real JS array. `instanceof` in turn fails across realms (the tests load
+// this file into a vm context). Neither type check holds everywhere, so copy
+// by length instead of asking what the value is.
+function toArray(value) {
+  if (Array.isArray(value)) return value.slice()
+  if (!value || typeof value !== "object") return []
+  var count = Number(value.length)
+  if (!isFinite(count) || count < 0) return []
+  var out = []
+  for (var i = 0; i < count; i++) out.push(value[i])
+  return out
+}
+
+// Measured nodes fastest-first, then the never-probed, then timeouts: the
+// order someone picking a node actually wants. Ties keep the subscription's
+// own order, so the list does not shuffle between refreshes that measure
+// nothing new.
+function sortNodesByDelay(nodes) {
+  var list = toArray(nodes)
+  function rank(node) {
+    var state = delayState(node && node.delay)
+    return state === "fast" || state === "slow" ? 0 : state === "unknown" ? 1 : 2
+  }
+  var decorated = []
+  for (var i = 0; i < list.length; i++) decorated.push({ index: i, node: list[i] })
+  decorated.sort(function(a, b) {
+    var ra = rank(a.node)
+    var rb = rank(b.node)
+    if (ra !== rb) return ra - rb
+    if (ra === 0) {
+      var da = Number(a.node.delay)
+      var db = Number(b.node.delay)
+      if (da !== db) return da - db
+    }
+    return a.index - b.index
+  })
+  var sorted = []
+  for (var j = 0; j < decorated.length; j++) sorted.push(decorated[j].node)
+  return sorted
+}
+
 // ---------------------------------------------------------------- formatting
 
 // Binary units, named as binary units. The arithmetic below divides by 1024,

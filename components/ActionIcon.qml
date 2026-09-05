@@ -60,6 +60,12 @@ Canvas {
       move(2.5, 13.5); line(3.4, 10.4); line(11.2, 2.6); line(13.4, 4.8)
       line(5.6, 12.6); ctx.closePath()
       move(9.6, 4.2); line(11.8, 6.4)
+    } else if (root.name === "bolt") {
+      // A lightning bolt for the delay test, pointing down: flat top-right,
+      // notch at the waist, tip at the bottom. Stroked like the rest of the
+      // set, not filled — the weight is what makes it a sibling.
+      move(9.5, 2); line(4.5, 9); line(7.5, 9); line(6.5, 14)
+      line(11.5, 7); line(8.5, 7); ctx.closePath()
     } else if (root.name === "arrow-up") {
       move(3.5, 9.5); line(8, 5); line(12.5, 9.5)
     } else if (root.name === "arrow-down") {

@@ -108,6 +108,32 @@ function selectProxyCommand(base, secret, group, name) {
     .concat([String(base) + "/proxies/" + encodeURIComponent(String(group || ""))])
 }
 
+// Surge-style latency test. mihomo answers one GET with a name → delay map for
+// the whole group, so testing costs one request no matter how many nodes the
+// subscription carries. The URL is mihomo's own default target.
+var DELAY_TEST_URL = "http://www.gstatic.com/generate_204"
+var DELAY_TIMEOUT_MS = "5000"
+
+// The curl cap runs past the delay timeout: a node that hangs is reported as a
+// timeout by the core itself, and only a wedged core should cost the watchdog.
+function groupDelayCommand(base, secret, group) {
+  var query = "?url=" + encodeURIComponent(DELAY_TEST_URL) + "&timeout=" + DELAY_TIMEOUT_MS
+  return ["curl", "-sS", "--max-time", String(Number(DELAY_TIMEOUT_MS) / 1000 + 5), "-w", "\\n%{http_code}"]
+    .concat(authArgs(secret))
+    .concat([String(base) + "/group/" + encodeURIComponent(String(group || "")) + "/delay" + query])
+}
+
+// Runtime-only: PATCH /configs flips the running core's TUN device. mihoro's
+// TOML schema has no tun key, so there is nothing to persist it into — the
+// panel says so rather than pretending a restart keeps it.
+function setTunCommand(base, secret, enable) {
+  return ["curl", "-sS", "--max-time", TIMEOUT_SECONDS, "-w", "\\n%{http_code}",
+          "-X", "PATCH", "-H", "Content-Type: application/json",
+          "-d", JSON.stringify({ tun: { enable: enable === true } })]
+    .concat(authArgs(secret))
+    .concat([String(base) + "/configs"])
+}
+
 // `/traffic` pushes one JSON object per second for as long as the socket is
 // held open, so live speeds cost one long-lived curl while the panel is open
 // instead of a poll loop. `--no-buffer` is what makes each line arrive as it
@@ -229,11 +255,39 @@ function findRoute(body, host) {
   return ""
 }
 
+// Group names come from the subscription, and the API's keys and PUT path
+// are case-sensitive: one config's rule group is `PROXY`, another's is
+// `Proxy`. Resolve the payload's real key for the wanted name — exact match
+// first, then case-insensitive — so both parsing and switching address the
+// group the core actually has. Null when nothing matches.
+//
+// Split from `resolveGroupName` so a caller that has already parsed the body
+// does not parse it a second time: `/proxies` is the largest payload the panel
+// reads, and every extra parse is a synchronous cost on the GUI thread.
+function groupKeyIn(proxies, wanted) {
+  if (!proxies || typeof proxies !== "object") return null
+  var name = String(wanted || "")
+  if (name === "") return null
+  if (Object.prototype.hasOwnProperty.call(proxies, name)) return name
+  var lower = name.toLowerCase()
+  for (var key in proxies) {
+    if (!Object.prototype.hasOwnProperty.call(proxies, key)) continue
+    if (key.toLowerCase() === lower) return key
+  }
+  return null
+}
+
+function resolveGroupName(body, wanted) {
+  var payload = parseJson(body)
+  return groupKeyIn(payload ? payload.proxies : null, wanted)
+}
+
 function parseProxyGroup(body, groupName) {
   var payload = parseJson(body)
   if (!payload) return null
   var proxies = payload.proxies
-  var group = proxies && typeof proxies === "object" ? proxies[String(groupName || "")] : null
+  var resolved = groupKeyIn(proxies, groupName)
+  var group = resolved !== null ? proxies[resolved] : null
   var all = group && group.all instanceof Array ? group.all : []
   var options = []
   for (var i = 0; i < all.length; i++) {
@@ -241,6 +295,58 @@ function parseProxyGroup(body, groupName) {
     if (name !== "") options.push({ value: name, label: name })
   }
   return { current: group ? String(group.now || "") : "", options: options }
+}
+
+// The last delay the core measured for a node. `history` entries are
+// `{time, delay}`; the core reports a failed probe as delay 0, and a node
+// never probed has no history at all — the two have to stay distinguishable,
+// so the absent case is NaN rather than 0.
+function nodeDelay(entry) {
+  var history = entry && entry.history instanceof Array ? entry.history : []
+  if (history.length === 0) return NaN
+  var last = history[history.length - 1]
+  var delay = Number(last && last.delay)
+  return isFinite(delay) ? delay : NaN
+}
+
+// Every Selector group except GLOBAL — the mode chips own GLOBAL, and listing
+// it here too would give it two pickers that can disagree. `all` names are
+// looked up in the same payload so each node carries its last measured delay.
+function parseSelectorGroups(body) {
+  var payload = parseJson(body)
+  if (!payload) return null
+  var proxies = payload.proxies
+  if (!proxies || typeof proxies !== "object") return null
+  var groups = []
+  for (var key in proxies) {
+    if (!Object.prototype.hasOwnProperty.call(proxies, key)) continue
+    var entry = proxies[key]
+    if (!entry || String(entry.type) !== "Selector" || key === "GLOBAL") continue
+    var all = entry.all instanceof Array ? entry.all : []
+    var nodes = []
+    for (var i = 0; i < all.length; i++) {
+      var name = String(all[i] || "")
+      if (name === "") continue
+      nodes.push({ name: name, delay: nodeDelay(proxies[name]) })
+    }
+    groups.push({ name: String(key), now: String(entry.now || ""), nodes: nodes })
+  }
+  groups.sort(function(a, b) { return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0) })
+  return groups
+}
+
+// `/group/{name}/delay` answers {nodeName: delayMs}. Nodes whose probe failed
+// are absent from the map, so a missing key means timeout, not 0.
+function parseGroupDelay(body) {
+  var payload = parseJson(body)
+  if (!payload) return null
+  var delays = {}
+  for (var key in payload) {
+    if (!Object.prototype.hasOwnProperty.call(payload, key)) continue
+    var delay = Number(payload[key])
+    if (isFinite(delay)) delays[String(key)] = delay
+  }
+  return delays
 }
 
 function parseGlobalProxies(body) { return parseProxyGroup(body, "GLOBAL") }

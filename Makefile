@@ -6,6 +6,7 @@ QML_FILES := Panel.qml Service.qml \
 	components/StatRow.qml \
 	components/Sparkline.qml \
 	components/ModeSection.qml \
+	components/NodesSection.qml \
 	components/ConnectionSection.qml \
 	components/RouteTestSection.qml \
 	components/RulesSection.qml \
