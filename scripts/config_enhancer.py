@@ -87,30 +87,34 @@ def read_subscription_url(path, subscription_id):
     raise ValueError("The active subscription URL is unavailable.")
 
 
-def read_mihoro_url(path):
+def load_mihoro_config(path):
+    # The file itself is load-bearing — it is where the update's URL lives —
+    # so a broken one fails the update. Individual keys are settled leniently
+    # by their readers below.
     try:
-        value = tomllib.loads(path.read_text()).get("remote_config_url", "")
-    except (OSError, tomllib.TOMLDecodeError) as error:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise ValueError("Could not read mihoro.toml: %s" % error) from error
-    url = str(value).strip()
-    if not url:
+
+
+def read_mihoro_url(mihoro_config):
+    # A non-string value is a mis-edit, not a URL: like the user agent below,
+    # it is refused rather than stringified onto the wire.
+    value = mihoro_config.get("remote_config_url", "")
+    if not isinstance(value, str) or not value.strip():
         raise ValueError("The active subscription URL is unavailable.")
-    return url
+    return value.strip()
 
 
 # The same client name `mihoro update --config` sends, so the two update paths
 # identify identically to the provider. Falls back to mihoro's own default when
-# the key is absent, empty, or the file cannot be read.
+# the key is absent, empty, or otherwise unusable — the user agent is cosmetic
+# and never worth failing an update over.
 DEFAULT_USER_AGENT = "mihoro"
 
 
-def read_user_agent(path):
-    if path is None:
-        return DEFAULT_USER_AGENT
-    try:
-        value = tomllib.loads(path.read_text()).get("mihoro_user_agent", "")
-    except (OSError, tomllib.TOMLDecodeError):
-        return DEFAULT_USER_AGENT
+def read_user_agent(mihoro_config):
+    value = mihoro_config.get("mihoro_user_agent", "")
     # A non-string value is a mis-edit, not a client name: mihoro's own
     # deserializer refuses it outright rather than stringifying it, and
     # `str(True)` would put the Python spelling of a bool on the wire.
@@ -187,12 +191,15 @@ def main():
             incoming_raw = args.source.read_bytes()
         else:
             if args.mihoro_config:
-                url = read_mihoro_url(args.mihoro_config)
+                mihoro_config = load_mihoro_config(args.mihoro_config)
+                url = read_mihoro_url(mihoro_config)
+                user_agent = read_user_agent(mihoro_config)
             elif args.subscriptions:
                 url = read_subscription_url(args.subscriptions, args.subscription_id)
+                user_agent = DEFAULT_USER_AGENT
             else:
                 raise ValueError("mihoro.toml is required for an update.")
-            incoming_raw = download(url, read_user_agent(args.mihoro_config))
+            incoming_raw = download(url, user_agent)
         candidate = load_yaml_bytes(incoming_raw)
         for key in MANAGED_KEYS:
             if key in current:

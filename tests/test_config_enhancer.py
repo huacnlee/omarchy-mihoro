@@ -111,6 +111,19 @@ with tempfile.TemporaryDirectory() as temp:
     run_enhancer(root, "update", "--mihoro-config", str(root / "mihoro.toml"),
                  "--no-restart")
 
+    # A non-string value is a mis-edit, not a URL: it is refused with the
+    # missing-URL message rather than stringified onto the wire.
+    (root / "mihoro.toml").write_text("remote_config_url = true\n")
+    result = run_enhancer(root, "update", "--mihoro-config", str(root / "mihoro.toml"),
+                          "--no-restart", expect=1)
+    assert "The active subscription URL is unavailable." in result.stderr
+
+    # Bytes the file cannot be decoded from report the file, not a codec.
+    (root / "mihoro.toml").write_bytes(b'remote_config_url = "http://x/y"\n\xff\xfe\n')
+    result = run_enhancer(root, "update", "--mihoro-config", str(root / "mihoro.toml"),
+                          "--no-restart", expect=1)
+    assert "Could not read mihoro.toml" in result.stderr
+
     # Base64 subscriptions are decoded before merging.
     encoded = root / "encoded.txt"
     encoded.write_bytes(base64.b64encode(remote.read_bytes()))
