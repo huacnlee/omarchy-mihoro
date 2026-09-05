@@ -239,7 +239,7 @@ grep -Fq 'property bool editingProxy: false' components/ConnectionSection.qml
 grep -Fq 'property string draftProxy: ""' components/ConnectionSection.qml
 grep -Fq 'id: proxyValue' components/ConnectionSection.qml
 grep -Fq 'anchors.right: parent.right' components/ConnectionSection.qml
-grep -Fq 'anchors.left: proxyLabel.right' components/ConnectionSection.qml
+grep -Fq 'anchors.right: proxyValue.left' components/ConnectionSection.qml
 grep -Fq 'text: "Apply"' components/ConnectionSection.qml
 grep -Fq 'text: "Cancel"' components/ConnectionSection.qml
 python3 - <<'PROXY_CANCEL'
