@@ -194,6 +194,17 @@ A subscription URL is a bearer token — the whole of the authentication.
 - Where the panel and the CLI could disagree, the file on disk wins and the
   running core wins over both — the panel never shows a state nothing has
   confirmed.
+- **A mode switch is not done until `config.yaml` says so.** The service runs
+  `mihomo -d <root>`, which reads `config.yaml` and never `mihoro.toml` — that
+  file is only the template `mihoro apply` renders into it. So a switch is three
+  writes: `PATCH /configs` moves the running core, `mihoro.toml` records the
+  intent for the `mihoro apply` fallback, and `config.yaml` is what the next boot
+  starts from. Writing the first two alone was a real bug: the mode was right all
+  session and back to its old value after a reboot. The `config.yaml` write
+  follows a PATCH that landed and restarts nothing, because the core is already
+  serving that mode and a restart would drop every live connection to install a
+  value it holds. TUN is the deliberate exception — mihoro's TOML has no key for
+  it, so it is runtime-only and a restart restores the file.
 - The connection facts name the selectable node on its own `Proxy` label/value
   row. In Rule mode that means the live `PROXY` selector; in Global mode it
   means `GLOBAL`; Direct has no selector and says `DIRECT`. Editing expands the

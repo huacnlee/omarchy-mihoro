@@ -18,11 +18,32 @@ refute() {
 
 # ---- mode switching -------------------------------------------------------
 
-# The API changes the running core in place; the file is what survives a
-# restart. A switch must do both, in that order, or the two disagree.
+# The API changes the running core in place; `config.yaml` is what the next boot
+# starts from. A switch must do both, or the mode is back to its old value after
+# a reboot — mihomo reads `config.yaml` and never `mihoro.toml`, so writing the
+# TOML alone (which is all this did once) persists nothing.
 grep -Fq 'writeConfig({ mode: wanted }' Service.qml
 grep -Fq 'ClashApi.setModeCommand' Service.qml
 grep -Fq 'Model.applyCommand()' Service.qml
+grep -Fq 'root.persistMode(root.pendingMode)' Service.qml
+grep -Fq '"python3", enhancerPath, "mode",' Service.qml
+# Persistence follows a PATCH that landed, so it writes and stops: restarting to
+# install a mode the core is already serving would drop every live connection to
+# change nothing, and a mode write is not a rules action.
+set_mode_body="$(sed -n '/^def set_mode/,/^def main/p' scripts/config_enhancer.py)"
+# Without this the two refutes below pass on an empty extraction — deleting
+# set_mode outright would leave the rule green with nothing holding it.
+grep -Fq 'def set_mode' <<<"$set_mode_body"
+refute -Fq 'restart' <<<"$set_mode_body"
+refute -Fq 'rules' <<<"$set_mode_body"
+# Its own Process: the enhancer's exit is wired to the rules pipeline, and
+# borrowing it would report a mode write as "Local rules applied."
+grep -Fq 'id: modePersistProcess' Service.qml
+refute -Fq 'runConfigEnhancer("mode"' Service.qml
+# Latest wins, like a node switch: a mode written while the previous write is
+# still running is queued, never dropped on the floor to drift in silence.
+grep -Fq 'root._queuedMode = ""' Service.qml
+grep -Fq 'if (queued !== "") root.persistMode(queued)' Service.qml
 # A rejected PATCH falls back to a restart rather than leaving the click on the
 # floor.
 grep -Fq 'root.runAction("apply"' Service.qml
