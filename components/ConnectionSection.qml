@@ -131,8 +131,8 @@ Column {
 
       PanelActionButton {
         id: editProxy
-        anchors.left: proxyLabel.right
-        anchors.leftMargin: Style.space(4)
+        anchors.right: proxyValue.left
+        anchors.rightMargin: Style.space(4)
         anchors.verticalCenter: parent.verticalCenter
         visible: root.live && root.service.currentProxyGroup !== ""
         size: Style.space(20)

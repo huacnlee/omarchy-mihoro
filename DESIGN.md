@@ -207,7 +207,8 @@ A subscription URL is a bearer token — the whole of the authentication.
   it, so it is runtime-only and a restart restores the file.
 - The connection facts name the selectable node on its own `Proxy` label/value
   row. In Rule mode that means the live `PROXY` selector; in Global mode it
-  means `GLOBAL`; Direct has no selector and says `DIRECT`. Editing expands the
+  means `GLOBAL`; Direct has no selector and says `DIRECT`. The edit icon sits
+  immediately before the right-aligned proxy value. Editing expands the
   row into a searchable picker, but choosing only stages a value: `Apply`
   changes the running core and `Cancel` leaves it alone. Success returns to the
   label/value row; failure leaves the editor open so the choice can be retried.
