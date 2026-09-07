@@ -216,4 +216,68 @@ with tempfile.TemporaryDirectory() as temp:
     finally:
         server.shutdown()
 
+# ---- persisting a mode switch --------------------------------------------
+#
+# mihomo starts from `config.yaml`; a mode that only ever reached the running
+# core over its API is back to the old value on the next boot. This is the
+# write that closes that gap, and it has to close it without disturbing
+# anything else in the file.
+
+with tempfile.TemporaryDirectory() as temp:
+    root = Path(temp)
+    config = root / "config.yaml"
+    config.write_text(yaml.safe_dump({
+        "port": 7891,
+        "mode": "global",
+        "external-controller": "0.0.0.0:9090",
+        "rules": ["GEOSITE,CN,DIRECT", "MATCH,PROXY"],
+        "proxies": [{"name": "Node", "type": "http", "server": "example.com", "port": 443}],
+    }, sort_keys=False))
+    config.chmod(0o600)
+
+    def run_mode(*extra, expect=0):
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "mode", "--config", str(config), *extra],
+            text=True, capture_output=True)
+        assert result.returncode == expect, result.stderr
+        return result
+
+    # Nothing but `mode` moves: the rules the panel prepended, the proxies, and
+    # the local overrides are all still there afterwards.
+    assert run_mode("--mode", "rule").stdout.strip() == "updated"
+    written = yaml.safe_load(config.read_text())
+    assert written["mode"] == "rule"
+    assert written["rules"] == ["GEOSITE,CN,DIRECT", "MATCH,PROXY"]
+    assert written["proxies"][0]["name"] == "Node"
+    assert written["external-controller"] == "0.0.0.0:9090"
+    assert written["port"] == 7891
+    # `mode` keeps its place rather than being appended: the file stays the
+    # shape mihoro and the enhancer both write it in.
+    assert list(written)[:3] == ["port", "mode", "external-controller"]
+    # config.yaml carries the subscription; the write must not widen it.
+    assert config.stat().st_mode & 0o777 == 0o600
+
+    # Re-switching to the mode already on disk rewrites nothing, so a switch
+    # back and forth cannot churn the file.
+    assert run_mode("--mode", "rule").stdout.strip() == "unchanged"
+
+    # No rules store, no mihomo binary, no config dir — the mode write needs
+    # none of them, and requiring them would be a lie about what it reads.
+    assert run_mode("--mode", "direct").stdout.strip() == "updated"
+    assert yaml.safe_load(config.read_text())["mode"] == "direct"
+
+    # Only the three modes mihomo has. argparse rejects the rest before any
+    # file is opened.
+    run_mode("--mode", "sideways", expect=2)
+    run_mode(expect=1)
+    assert yaml.safe_load(config.read_text())["mode"] == "direct"
+
+    # The other actions still say what they need, now that argparse no longer
+    # says it for them.
+    missing = subprocess.run(
+        [sys.executable, str(SCRIPT), "apply", "--config", str(config)],
+        text=True, capture_output=True)
+    assert missing.returncode == 2, missing.stderr
+    assert "--rules is required" in missing.stderr
+
 print("config enhancer tests passed")

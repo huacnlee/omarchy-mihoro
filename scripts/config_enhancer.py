@@ -28,6 +28,8 @@ MANAGED_KEYS = (
     "geo-update-interval", "geox-url",
 )
 
+MODES = ("rule", "global", "direct")
+
 
 def load_yaml_bytes(raw):
     try:
@@ -158,20 +160,55 @@ def atomic_write(path, payload, mode):
             os.unlink(temporary)
 
 
+# mihomo starts from `config.yaml` and never reads `mihoro.toml` — that file is
+# only the template `mihoro apply` renders into it. So a mode that reached the
+# running core over `PATCH /configs` is gone by the next boot unless it is
+# written here too.
+#
+# Deliberately the whole of the change: no rules are recompiled, the core is not
+# asked to validate a one-key edit it already accepted over its own API, and the
+# service is not restarted. The core is serving this mode already; the file is
+# only catching up for next time, so touching the service would drop every live
+# connection to change nothing.
+def set_mode(config_path, mode):
+    if mode not in MODES:
+        raise ValueError("A proxy mode is required.")
+    raw = config_path.read_bytes()
+    current = load_yaml_bytes(raw)
+    if current.get("mode") == mode:
+        print("unchanged")
+        return
+    current["mode"] = mode
+    rendered = yaml.safe_dump(current, sort_keys=False, allow_unicode=True).encode("utf-8")
+    atomic_write(config_path, rendered, config_path.stat().st_mode & 0o777)
+    print("updated")
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("apply", "update"))
+    parser.add_argument("action", choices=("apply", "update", "mode"))
     parser.add_argument("--config", required=True, type=Path)
-    parser.add_argument("--rules", required=True, type=Path)
+    # Required by `apply` and `update`, checked below rather than by argparse:
+    # `mode` needs none of them, and a rules store it will not read has no
+    # business being on its command line.
+    parser.add_argument("--rules", type=Path)
     parser.add_argument("--subscriptions", type=Path)
     parser.add_argument("--mihoro-config", type=Path)
     parser.add_argument("--subscription-id")
-    parser.add_argument("--mihomo-bin", required=True)
-    parser.add_argument("--config-dir", required=True, type=Path)
+    parser.add_argument("--mode", choices=MODES)
+    parser.add_argument("--mihomo-bin")
+    parser.add_argument("--config-dir", type=Path)
     parser.add_argument("--systemctl", default="systemctl")
     parser.add_argument("--source", type=Path)
     parser.add_argument("--no-restart", action="store_true")
     args = parser.parse_args()
+
+    if args.action == "mode":
+        return set_mode(args.config, args.mode)
+
+    for name in ("rules", "mihomo_bin", "config_dir"):
+        if getattr(args, name) is None:
+            parser.error("--%s is required for %s." % (name.replace("_", "-"), args.action))
 
     if not args.subscription_id:
         if not args.subscriptions:

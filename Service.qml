@@ -161,8 +161,10 @@ Item {
   readonly property bool canSwitchMode: Model.canSwitchMode(probe, apiState)
   readonly property string modeHint: Model.modeHint(probe, apiState)
 
-  // The API is the running truth; mihoro.toml is what survives a restart. They
-  // agree except in the window between a switch and the next refresh.
+  // The API is the running truth. `config.yaml` is what the next boot starts
+  // from and mihoro.toml is the template `mihoro apply` renders into it, so a
+  // switch writes all three; mihoro.toml stands in here only when the API is
+  // unreachable. They agree except between a switch and the next refresh.
   readonly property string mode: pendingMode !== "" ? pendingMode
     : (liveConfigs && liveConfigs.mode !== "" ? liveConfigs.mode : config.mode)
   readonly property string currentProxyGroup: mode === "rule" ? ruleProxyGroup
@@ -322,8 +324,9 @@ Item {
     lastError = ""
     optimismTimer.restart()
 
-    // Persisted first either way: if the PATCH lands, the file already agrees
-    // with the core; if it does not, the file is what `mihoro apply` reads.
+    // mihoro.toml first either way: if the PATCH is rejected, that file is what
+    // the `mihoro apply` fallback reads. It is not on its own enough to survive
+    // a restart — persistMode() writes `config.yaml` once the PATCH lands.
     // A write that could not start takes the optimistic chip back with it.
     if (!writeConfig({ mode: wanted }, apiBase === "" ? "apply" : "mode")) pendingMode = ""
   }
@@ -667,6 +670,36 @@ Item {
     lastError = ""
     configEnhancerProcess.command = enhancerCommand(kind)
     configEnhancerProcess.running = true
+  }
+
+  // The half of a mode switch that outlives a reboot. `PATCH /configs` moves the
+  // running core and `mihoro.toml` records the intent, but the service starts
+  // `mihomo -d <root>` — it reads `config.yaml` and nothing else, so a mode that
+  // never reached that file is back to its old value on the next boot.
+  //
+  // Runs after the PATCH landed, never instead of it: the user-visible switch is
+  // already done, this only writes it down. Hence no rules pass, no restart, no
+  // status line, and its own Process rather than the enhancer's — that one's
+  // exit is wired to the rules pipeline, and a mode write is not a rules action.
+  //
+  // A second switch lands while the first is still being written — two taps on
+  // the mode keys is enough — so the newer value is queued rather than dropped,
+  // like a node switch. Dropping it would leave `config.yaml` on the older mode
+  // with nothing said about it, which is the silent drift this path exists to
+  // end.
+  property string _queuedMode: ""
+
+  function persistMode(value) {
+    var wanted = ClashApi.normalizeMode(value)
+    if (wanted === "") return
+    if (modePersistProcess.running) {
+      _queuedMode = wanted
+      return
+    }
+    modePersistProcess.command = ["python3", enhancerPath, "mode",
+      "--config", mihomoConfigPath,
+      "--mode", wanted]
+    modePersistProcess.running = true
   }
 
   function installRuleTimer() {
@@ -1443,6 +1476,25 @@ Item {
   }
 
   Process {
+    id: modePersistProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: modePersistOut; waitForEnd: true }
+    stderr: StdioCollector { id: modePersistErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      var queued = root._queuedMode
+      root._queuedMode = ""
+      // The switch itself worked — the core is serving the new mode and the chip
+      // is right. Only the part that outlives a restart failed, so this says so
+      // instead of taking a confirmation back that was never wrong.
+      if (exitCode !== 0)
+        root.reportError(Model.noticeMessage(modePersistErr.text
+          || "Switched, but the mode will not survive a restart."))
+      if (queued !== "") root.persistMode(queued)
+    }
+  }
+
+  Process {
     id: modeProcess
     running: false
     command: []
@@ -1451,6 +1503,9 @@ Item {
     onExited: function(exitCode) {
       var result = ClashApi.classify(exitCode, modeOut.text, modeErr.text)
       if (result.ok) {
+        // Before refreshApi(), which clears pendingMode the moment `/configs`
+        // agrees — the value has to be read while it is still there.
+        root.persistMode(root.pendingMode)
         root.actionStatus = "Switched to " + Model.modeLabel(root.pendingMode) + "."
         actionStatusTimer.restart()
         root.refreshApi()
