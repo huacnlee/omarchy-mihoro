@@ -70,3 +70,15 @@ make validate
 ## License
 
 MIT. mihoro and mihomo are distributed separately under their own licenses.
+
+## More Omarchy projects
+
+- [Omamail](https://github.com/huacnlee/omamail) — A mail plugin for Omarchy
+  with Gmail, HEY, and IMAP support. Read and manage email right from the
+  desktop.
+- [Omasend](https://github.com/huacnlee/omasend) — A native LocalSend client
+  for Omarchy. Share files, folders, and text over your local network. Built
+  with GPUI Kit for Linux, macOS, and Windows.
+- [omarchy-which-key](https://github.com/huacnlee/omarchy-which-key) — Which Key
+  for the desktop. Hold Super to see a shortcut guide drawn from your active
+  Omarchy and Hyprland keybindings.
