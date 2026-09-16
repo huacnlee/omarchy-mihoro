@@ -216,6 +216,116 @@ with tempfile.TemporaryDirectory() as temp:
     finally:
         server.shutdown()
 
+# ---- reloading the core in place ------------------------------------------
+#
+# A restart tears the TUN down and builds it again, and on a systemd-resolved
+# host every DNS step of that rebuild is a polkit prompt for a core that runs
+# as the user. `PUT /configs?force=true` reloads the same file inside the
+# running process, where an unchanged tun section is left alone. The restart
+# stays as the fallback for a core that is not answering.
+
+def reload_root(root, controller, secret=None):
+    document = {
+        "port": 7891,
+        "mode": "rule",
+        "external-controller": controller,
+        "rules": ["MATCH,PROXY"],
+    }
+    if secret is not None:
+        document["secret"] = secret
+    (root / "config.yaml").write_text(yaml.safe_dump(document, sort_keys=False))
+    (root / "rules.json").write_text(json.dumps({
+        "version": 1,
+        "subscriptions": {"sub-a": {"rules": [
+            {"id": "cn", "type": "GEOSITE", "match": "CN", "route": "DIRECT"}
+        ], "applied": []}},
+    }))
+    write_executable(root / "mihomo", "#!/bin/sh\nexit 0\n")
+    write_executable(root / "systemctl", "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$0.log\"\n")
+
+
+def restarted(root):
+    log = root / "systemctl.log"
+    return log.exists() and "--user restart mihomo.service" in log.read_text()
+
+
+with tempfile.TemporaryDirectory() as temp:
+    root = Path(temp)
+    seen = {}
+    status = {"code": 204}
+
+    class ReloadHandler(http.server.BaseHTTPRequestHandler):
+        def do_PUT(self):
+            length = int(self.headers.get("Content-Length", "0"))
+            seen["path"] = self.path
+            seen["auth"] = self.headers.get("Authorization", "")
+            seen["body"] = json.loads(self.rfile.read(length) or b"{}")
+            self.send_response(status["code"])
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), ReloadHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        # A controller bound to every interface is reached over loopback, the
+        # way the panel and mihoro's dashboard URL both already resolve it.
+        reload_root(root, "0.0.0.0:%d" % server.server_port, secret="s3cret")
+        run_enhancer(root, "apply")
+        assert seen["path"] == "/configs?force=true", seen
+        assert seen["auth"] == "Bearer s3cret", seen
+        assert seen["body"] == {"path": str(root / "config.yaml")}, seen
+        assert not restarted(root)
+
+        # `--no-restart` means the core is not touched at all, not "reload
+        # instead": the timer's update and a rules-only rewrite rely on that.
+        seen.clear()
+        (root / "rules.json").write_text(json.dumps({
+            "version": 1,
+            "subscriptions": {"sub-a": {"rules": [
+                {"id": "cn", "type": "GEOSITE", "match": "CN", "route": "PROXY"}
+            ], "applied": [
+                {"id": "cn", "type": "GEOSITE", "match": "CN", "route": "DIRECT"}
+            ]}},
+        }))
+        run_enhancer(root, "apply", "--no-restart")
+        assert seen == {}, seen
+        assert not restarted(root)
+
+        # The core refusing the reload is not the end of the road: the file
+        # already passed `mihomo -t`, so a restart from it is the old, safe path.
+        # No secret means no header — a bearer the core did not ask for is a 401.
+        seen.clear()
+        status["code"] = 400
+        reload_root(root, "127.0.0.1:%d" % server.server_port)
+        run_enhancer(root, "apply")
+        assert seen["path"] == "/configs?force=true", seen
+        assert seen["auth"] == "", seen
+        assert restarted(root)
+    finally:
+        server.shutdown()
+
+with tempfile.TemporaryDirectory() as temp:
+    root = Path(temp)
+    # A closed port is a core that is not running (or a controller that moved):
+    # the restart brings it up from the freshly written file, as before.
+    probe = http.server.HTTPServer(("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
+    closed_port = probe.server_port
+    probe.server_close()
+    reload_root(root, "127.0.0.1:%d" % closed_port)
+    run_enhancer(root, "apply")
+    assert restarted(root)
+
+with tempfile.TemporaryDirectory() as temp:
+    root = Path(temp)
+    # No controller at all — nothing to reload through, so the restart is the
+    # only way the new file reaches the core.
+    reload_root(root, "")
+    run_enhancer(root, "apply")
+    assert restarted(root)
+
 # ---- persisting a mode switch --------------------------------------------
 #
 # mihomo starts from `config.yaml`; a mode that only ever reached the running

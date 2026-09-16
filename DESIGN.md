@@ -128,10 +128,13 @@ credential.
 - **An enhanced update has no unruled window.** The plugin downloads into a
   candidate, preserves mihoro's current local overrides, prepends the active
   subscription's rules, asks the installed mihomo core to validate it, and
-  only then atomically replaces `config.yaml` and restarts once. Enabling local
-  rules moves config updates from mihoro's cron entry to the plugin's user
-  timer; unrelated cron entries are retained. Failure leaves the running file
-  untouched.
+  only then atomically replaces `config.yaml` and asks the running core to
+  reload it in place (`PUT /configs?force=true`), restarting the service only
+  when the core does not answer. A reload keeps the TUN up; a restart rebuilds
+  it, and on a systemd-resolved host every DNS step of that rebuild is a polkit
+  prompt. Enabling local rules moves config updates from mihoro's cron entry to
+  the plugin's user timer; unrelated cron entries are retained. Failure leaves
+  the running file untouched.
 
 ## Rows, the cursor, and the keyboard
 
