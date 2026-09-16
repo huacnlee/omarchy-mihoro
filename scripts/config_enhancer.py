@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+import urllib.error
 import urllib.request
 
 try:
@@ -143,6 +144,64 @@ def download(url, user_agent):
     request = urllib.request.Request(url, headers={"User-Agent": user_agent})
     with urllib.request.urlopen(request, timeout=30) as response:
         return response.read()
+
+
+# Mirrors ClashApi.baseUrl: strip any scheme, honour bracketed IPv6, take the
+# port off the right, and reach a controller bound to every interface over
+# loopback. A controller with no port (or a unix socket) is not addressable.
+WILDCARD_HOSTS = ("", "*", "0.0.0.0", "::", "[::]")
+
+
+def controller_base_url(controller):
+    text = str(controller or "").strip()
+    if text == "" or text.lower().startswith("unix:"):
+        return ""
+    text = re.sub(r"^https?://", "", text, flags=re.IGNORECASE).rstrip("/")
+    if text.startswith("["):
+        close = text.find("]")
+        if close < 0 or not text[close + 1:].startswith(":"):
+            return ""
+        host, port = text[:close + 1], text[close + 2:].strip()
+    else:
+        host, split, port = text.rpartition(":")
+        if not split:
+            return ""
+        host, port = host.strip(), port.strip()
+    if port == "":
+        return ""
+    if host in WILDCARD_HOSTS:
+        host = "127.0.0.1"
+    elif ":" in host and not host.startswith("["):
+        host = "[" + host + "]"
+    return "http://%s:%s" % (host, port)
+
+
+# Asks the running core to reload `config_path` in place. A restart tears the
+# TUN down and builds it again, and on a systemd-resolved host each DNS step
+# of that rebuild is a polkit prompt because the core runs as the user, not
+# root. A reload keeps the process — and an unchanged tun section — as it is.
+#
+# False for a core that is not answering or refuses the file, so the caller
+# can fall back to the restart. Proxies are bypassed on purpose: the
+# controller is on loopback, and the proxy in `http_proxy` is this very core.
+def reload_core(config, config_path):
+    base = controller_base_url(config.get("external-controller", ""))
+    if base == "":
+        return False
+    headers = {"Content-Type": "application/json"}
+    secret = config.get("secret", "")
+    if isinstance(secret, str) and secret != "":
+        headers["Authorization"] = "Bearer " + secret
+    request = urllib.request.Request(
+        base + "/configs?force=true",
+        data=json.dumps({"path": str(config_path)}).encode("utf-8"),
+        headers=headers, method="PUT")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=30):
+            return True
+    except (urllib.error.URLError, OSError):
+        return False
 
 
 def atomic_write(path, payload, mode):
@@ -281,7 +340,7 @@ def main():
         atomic_write(args.config, rendered, config_mode)
     atomic_write(args.rules, store_payload, 0o600)
 
-    if changed and not args.no_restart:
+    if changed and not args.no_restart and not reload_core(candidate, args.config):
         restart = subprocess.run([args.systemctl, "--user", "restart", "mihomo.service"])
         if restart.returncode != 0:
             raise ValueError("The configuration was applied, but mihomo.service could not restart.")
