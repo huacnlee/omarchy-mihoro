@@ -3,7 +3,7 @@
 An Omarchy bar panel for [mihoro](https://github.com/spencerwooo/mihoro), the
 Mihomo CLI client for Linux.
 
-<img width="320" alt="Mihoro for Omarchy" src="preview.png" />
+<img width="400" alt="Mihoro for Omarchy" src="preview.png" />
 
 Use it to monitor your proxy, switch between Rule, Global, and Direct modes,
 pick a proxy node per group with measured delays, toggle TUN, keep several
