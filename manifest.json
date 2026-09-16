@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mihoro.omarchy",
   "name": "Mihoro",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "author": "huacnlee",
   "license": "MIT",
   "description": "A Clash-style proxy client for Omarchy, running the Mihomo (Clash.Meta) core: connection status, live up/down speed, Rule, Global and Direct switching, proxy-node selection with delay tests, TUN toggling, and several Clash subscriptions to switch between, driven by the mihoro CLI.",
