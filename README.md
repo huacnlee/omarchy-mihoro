@@ -36,10 +36,11 @@ installation.
 You can also follow the [upstream installation instructions](https://github.com/spencerwooo/mihoro#installation)
 from the panel menu or install it manually.
 
-Initialize it and enter your subscription URL when prompted:
+Install & initialize it and enter your subscription URL when prompted:
 
 ```bash
-mihoro init
+curl -fsSL https://raw.githubusercontent.com/spencerwooo/mihoro/main/install.sh | sh -s -- --mirror https://gh-proxy.org
+MIHORO_GITHUB_MIRROR=https://gh-proxy.org mihoro init
 ```
 
 For TUN mode, grant mihomo the required capabilities and restart it:
