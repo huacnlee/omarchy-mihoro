@@ -129,6 +129,36 @@ with tempfile.TemporaryDirectory() as temp:
     encoded.write_bytes(base64.b64encode(remote.read_bytes()))
     run_enhancer(root, "update", "--source", str(encoded), "--no-restart")
 
+    # `dns` is not a managed key, but it cannot simply be dropped either: the
+    # TUN adapter hijacks `0.0.0.0:53`, so a node-only subscription would leave
+    # the host with no working resolver at all. A subscription without a `dns`
+    # section inherits the previous one.
+    without_dns = root / "no-dns.yaml"
+    without_dns.write_text(yaml.safe_dump({
+        "rules": ["MATCH,PROXY"],
+        "proxies": [{"name": "Node", "type": "http", "server": "example.com", "port": 443}],
+    }, sort_keys=False))
+    config = yaml.safe_load((root / "config.yaml").read_text())
+    config["dns"] = {"enable": True, "enhanced-mode": "fake-ip", "nameserver": ["1.1.1.1"]}
+    (root / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
+    write_executable(root / "mihomo", "#!/bin/sh\nexit 0\n")
+
+    run_enhancer(root, "update", "--source", str(without_dns), "--no-restart")
+    carried = yaml.safe_load((root / "config.yaml").read_text())
+    assert carried["dns"] == {"enable": True, "enhanced-mode": "fake-ip", "nameserver": ["1.1.1.1"]}
+    assert carried["proxies"][0]["name"] == "Node"
+
+    # A subscription that brings its own `dns` keeps it — the incoming section
+    # is the one written against this provider's nodes and always wins.
+    with_dns = root / "with-dns.yaml"
+    with_dns.write_text(yaml.safe_dump({
+        "rules": ["MATCH,PROXY"],
+        "dns": {"enable": True, "enhanced-mode": "redir-host", "nameserver": ["223.5.5.5"]},
+    }, sort_keys=False))
+    run_enhancer(root, "update", "--source", str(with_dns), "--no-restart")
+    replaced = yaml.safe_load((root / "config.yaml").read_text())
+    assert replaced["dns"] == {"enable": True, "enhanced-mode": "redir-host", "nameserver": ["223.5.5.5"]}
+
     # A failed mihomo validation leaves the previous working config untouched.
     before = (root / "config.yaml").read_text()
     write_executable(root / "mihomo", "#!/bin/sh\necho invalid >&2\nexit 1\n")
