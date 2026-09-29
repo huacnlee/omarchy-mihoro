@@ -573,4 +573,46 @@ const unwrapped = model.sortNodesByDelay(qmlSequence)
 assert.strictEqual(unwrapped.map(node => node.name).join(","),
   "wrapped-fast,wrapped-slow")
 
+// ------------------------------------------------------------ TUN DNS
+//
+// mihomo points systemd-resolved at the TUN by running `resolvectl`, which is
+// a polkit prompt; at login it runs before the agent is up and fails, leaving
+// DNS on the physical link. The panel reads the TUN link back, unprivileged.
+function sameList(actual, expected) {
+  assert.strictEqual(JSON.stringify(Array.from(actual)), JSON.stringify(expected))
+}
+sameList(model.tunDnsCommand("utun1024"),
+  ["sh", "-c", model.TUN_DNS_SCRIPT, "sh", "utun1024"])
+sameList(model.tunDnsCommand(""), [])
+// A device name that resolvectl would read as an option is not passed along.
+sameList(model.tunDnsCommand("-h"), [])
+
+assert.strictEqual(model.parseTunDns("Link 3 (utun1024): 198.18.0.2\nLink 3 (utun1024): yes\n"), "ok")
+assert.strictEqual(model.parseTunDns("Link 3 (utun1024):\nLink 3 (utun1024): no\n"), "bypassed")
+// A server with no default route still loses every query that is not scoped
+// to it, which is all of them.
+assert.strictEqual(model.parseTunDns("Link 3 (utun1024): 198.18.0.2\nLink 3 (utun1024): no\n"), "bypassed")
+assert.strictEqual(model.parseTunDns("Link 3 (utun1024):\nLink 3 (utun1024): yes\n"), "bypassed")
+assert.strictEqual(model.parseTunDns(""), "")
+assert.strictEqual(model.parseTunDns("Link 3 (utun1024): 198.18.0.2\n"), "")
+
+// The server mihomo itself would hand resolved: the address after the TUN's own.
+assert.strictEqual(model.tunDnsServer("198.18.0.1/30"), "198.18.0.2")
+assert.strictEqual(model.tunDnsServer("172.19.0.1/30"), "172.19.0.2")
+assert.strictEqual(model.tunDnsServer("10.0.0.255/16"), "10.0.1.0")
+assert.strictEqual(model.tunDnsServer("255.255.255.255/32"), "")
+assert.strictEqual(model.tunDnsServer("fdfe::1/126"), "")
+assert.strictEqual(model.tunDnsServer(""), "")
+
+// The plugin never asks for root itself: resolved asks polkit for each setting.
+const repair = model.tunDnsRepairCommand("utun1024", "198.18.0.2")
+sameList(repair,
+  ["sh", "-c", model.TUN_DNS_REPAIR_SCRIPT, "sh", "utun1024", "198.18.0.2"])
+assert.ok(model.TUN_DNS_REPAIR_SCRIPT.indexOf('resolvectl dns "$1" "$2"') >= 0)
+assert.ok(model.TUN_DNS_REPAIR_SCRIPT.indexOf('resolvectl domain "$1" "~."') >= 0)
+assert.ok(model.TUN_DNS_REPAIR_SCRIPT.indexOf('resolvectl default-route "$1" yes') >= 0)
+sameList(model.tunDnsRepairCommand("utun1024", ""), [])
+sameList(model.tunDnsRepairCommand("", "198.18.0.2"), [])
+sameList(model.tunDnsRepairCommand("-x", "198.18.0.2"), [])
+
 console.log("model tests passed")

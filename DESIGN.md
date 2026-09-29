@@ -120,6 +120,16 @@ credential.
   (or `DIRECT`) which carried the traffic; selector group names are not shown
   as if they were an outbound. Overseas and mainland sites are separated so
   the routing policy is scannable at a glance.
+- **A TUN whose DNS goes around it is named, and fixed only on a click.**
+  mihomo makes the TUN resolved's DNS with three `resolvectl` runs, each a
+  polkit prompt; at login the core starts before the shell's polkit agent, all
+  three fail, and DNS stays on the physical link. Traffic still flows, but as
+  bare IPs, so rules match no domain and the route test finds nothing. The
+  panel reads the link back on every refresh (no privilege needed) and, while
+  it is bypassed, says so on page one and on the route test, with
+  `Fix DNS...` (`f`) re-running the same three settings. The dialog is the
+  system's: the plugin never runs anything as root, and never raises a
+  password prompt the user did not ask for.
 - **Local rules enhance a subscription; they do not replace it.** Each saved
   subscription owns an ordered list of structured DOMAIN, DOMAIN-SUFFIX,
   DOMAIN-KEYWORD, and GEOSITE rules. The list order is the match priority and

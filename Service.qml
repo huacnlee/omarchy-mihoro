@@ -199,6 +199,13 @@ Item {
     : null
   readonly property bool canToggleTun: tunState !== null && connection.key === "running"
 
+  // Whether systemd-resolved sends DNS into the TUN: "ok", "bypassed", or ""
+  // when there is nothing to check or no resolved to ask. See
+  // `Model.TUN_DNS_SCRIPT` for how it ends up bypassed.
+  property string tunDns: ""
+  readonly property bool dnsBypassed: tunDns === "bypassed" && tunState === true
+  readonly property bool repairingDns: tunDnsRepairProcess.running
+
   readonly property bool busy: probeProcess.running || configReadProcess.running
     || actionProcess.running || modeProcess.running || proxySelectProcess.running
     || configWriteProcess.running || guideProcess.running
@@ -302,6 +309,37 @@ Item {
     routeRequestProcess.command = ClashApi.routeTestCommand(routeTests[routeTestIndex].host)
     routeRequestProcess.running = true
     routeLookupDelay.restart()
+  }
+
+  function checkTunDns() {
+    var live = liveConfigs
+    if (!live || live.tunEnabled !== true || !live.tunAutoRoute) {
+      tunDns = ""
+      return
+    }
+    var command = Model.tunDnsCommand(live.tunDevice)
+    if (command.length === 0) {
+      tunDns = ""
+      return
+    }
+    if (tunDnsProcess.running) return
+    tunDnsProcess.command = command
+    tunDnsProcess.running = true
+  }
+
+  // Only ever on the user's click: see `Model.TUN_DNS_REPAIR_SCRIPT`.
+  function repairTunDns() {
+    if (!dnsBypassed || tunDnsRepairProcess.running || !liveConfigs) return
+    var command = Model.tunDnsRepairCommand(liveConfigs.tunDevice,
+      Model.tunDnsServer(liveConfigs.tunInet4Address))
+    if (command.length === 0) {
+      reportError("Could not work out the TUN's DNS address.")
+      return
+    }
+    lastError = ""
+    actionStatus = "Routing DNS through mihomo…"
+    tunDnsRepairProcess.command = command
+    tunDnsRepairProcess.running = true
   }
 
   function finishRouteTest(result) {
@@ -999,6 +1037,7 @@ Item {
       // still being updated.
       if (!result.ok) {
         root.liveConfigs = null
+        root.tunDns = ""
         root.connectionCount = 0
         root.downloadTotal = 0
         root.uploadTotal = 0
@@ -1019,6 +1058,7 @@ Item {
       var parsed = ClashApi.parseConfigs(result.body)
       if (!parsed) return
       root.liveConfigs = parsed
+      root.checkTunDns()
       // The core has spoken; stop overriding with the click.
       if (root.pendingMode !== "" && parsed.mode === root.pendingMode) root.pendingMode = ""
       // Same for TUN — but a disagreeing answer is only authoritative if this
@@ -1086,7 +1126,39 @@ Item {
         return
       }
       var route = ClashApi.findRoute(response.body, root.routeTests[root.routeTestIndex].host)
-      root.finishRouteTest(route === "" ? "Not found" : route)
+      // With DNS off the TUN the core only ever sees bare IPs, so no request
+      // can carry the host being looked for. Say why rather than "Not found".
+      root.finishRouteTest(route !== "" ? route : (root.dnsBypassed ? "DNS bypassed" : "Not found"))
+    }
+  }
+
+  Process {
+    id: tunDnsProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: tunDnsOut; waitForEnd: true }
+    onExited: function(exitCode) {
+      root.tunDns = exitCode === 0 ? Model.parseTunDns(tunDnsOut.text) : ""
+    }
+  }
+
+  Process {
+    id: tunDnsRepairProcess
+    running: false
+    command: []
+    stderr: StdioCollector { id: tunDnsRepairErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      root.actionStatus = ""
+      if (exitCode !== 0) {
+        // resolvectl's own words: "Access denied" for a dismissed dialog,
+        // "Interactive authentication required" with no agent to show one.
+        var detail = String(tunDnsRepairErr.text || "").trim().split("\n").pop()
+        root.reportError("Could not route DNS through mihomo" + (detail !== "" ? ": " + detail : "."))
+      } else {
+        root.actionStatus = Model.DNS_ROUTED_STATUS
+        actionStatusTimer.restart()
+      }
+      root.checkTunDns()
     }
   }
 

@@ -132,6 +132,18 @@ assert.strictEqual(api.parseConfigs('{"tun":{"enable":false}}').tunEnabled, fals
 assert.strictEqual(api.parseConfigs('{"mode":"rule"}').tunEnabled, null)
 assert.strictEqual(api.parseConfigs("["), null)
 
+// What the panel needs to check the TUN's DNS takeover: the device, whether it
+// routes at all, and the address its DNS server sits behind.
+const tunConfigs = api.parseConfigs(JSON.stringify({
+  tun: { enable: true, device: "utun1024", "auto-route": true, "inet4-address": ["198.18.0.1/30"] }
+}))
+assert.strictEqual(tunConfigs.tunDevice, "utun1024")
+assert.strictEqual(tunConfigs.tunAutoRoute, true)
+assert.strictEqual(tunConfigs.tunInet4Address, "198.18.0.1/30")
+assert.strictEqual(api.parseConfigs('{"tun":{"enable":true}}').tunDevice, "")
+assert.strictEqual(api.parseConfigs('{"tun":{"enable":true}}').tunAutoRoute, false)
+assert.strictEqual(api.parseConfigs('{"tun":{"enable":true}}').tunInet4Address, "")
+
 const conns = api.parseConnections(JSON.stringify({
   downloadTotal: 1024,
   uploadTotal: 512,

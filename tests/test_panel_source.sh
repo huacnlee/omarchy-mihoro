@@ -664,4 +664,17 @@ refute -rEq 'execDetached\(.*wl-copy|bash.*wl-copy' Panel.qml Service.qml compon
 [[ ! -e probe-arrayisarray.qml ]]
 [[ -e tests/probe-arrayisarray.qml ]]
 
+# ---- TUN DNS ----------------------------------------------------------------
+
+# The fix raises the system's password dialog, so only a click or a key may run
+# it. Called from inside the service it would fire on some refresh after login,
+# a prompt nobody asked for.
+grep -Fq 'onClicked: mihoro.repairTunDns()' Panel.qml
+grep -Fq 'onClicked: root.service.repairTunDns()' components/RouteTestSection.qml
+# The definition is the only mention in the service.
+[[ "$(grep -c 'repairTunDns' Service.qml)" -eq 1 ]]
+# The check runs whenever the core's config is read, so a login that lost the
+# race is seen on the first refresh.
+grep -Fq 'root.checkTunDns()' Service.qml
+
 echo "panel source tests passed"
