@@ -62,6 +62,89 @@ function installationGuideCommand() {
   return ["omarchy", "launch", "browser", INSTALL_DOCS_URL]
 }
 
+// ------------------------------------------------------------ TUN DNS
+//
+// A TUN catches traffic by IP. The host a rule matches on comes from the DNS
+// answer, so mihomo also has to be the resolver: it runs `resolvectl` three
+// times to make the TUN link systemd-resolved's DNS and default route. Each run
+// is a polkit prompt for a core that is not root, and at login the core starts
+// before the shell's polkit agent does — every run fails, and DNS stays on the
+// physical link. Traffic still flows, but only as bare IPs: the rules see no
+// domain, and the route test finds no request to report on.
+//
+// Reading the link back needs no privilege, so it is checked on every refresh.
+var TUN_DNS_SCRIPT = "resolvectl dns \"$1\" && resolvectl default-route \"$1\""
+
+function validDevice(device) {
+  var name = String(device || "")
+  return name !== "" && name.charAt(0) !== "-"
+}
+
+function tunDnsCommand(device) {
+  if (!validDevice(device)) return []
+  return ["sh", "-c", TUN_DNS_SCRIPT, "sh", String(device)]
+}
+
+// "ok" when the link has a DNS server and is the default route, "bypassed"
+// when either is missing, and "" when the output is not the two lines asked
+// for — a host without resolved has nothing to report, not a fault.
+function parseTunDns(text) {
+  var lines = String(text || "").split("\n").filter(function(line) { return line.trim() !== "" })
+  if (lines.length < 2) return ""
+  function value(line) {
+    var colon = line.indexOf(":")
+    return colon < 0 ? null : line.substring(colon + 1).trim()
+  }
+  var servers = value(lines[0])
+  var defaultRoute = value(lines[1])
+  if (servers === null || defaultRoute === null) return ""
+  return servers !== "" && defaultRoute === "yes" ? "ok" : "bypassed"
+}
+
+// The address after the TUN's own, which is where mihomo puts the resolver it
+// hands to resolved. IPv4 only, as mihomo does.
+function tunDnsServer(cidr) {
+  var address = String(cidr || "").split("/")[0]
+  var parts = address.split(".")
+  if (parts.length !== 4) return ""
+  var value = 0
+  for (var i = 0; i < 4; i++) {
+    if (!/^\d{1,3}$/.test(parts[i])) return ""
+    var octet = Number(parts[i])
+    if (octet > 255) return ""
+    value = value * 256 + octet
+  }
+  value += 1
+  if (value > 0xffffffff) return ""
+  var out = []
+  for (var j = 0; j < 4; j++) {
+    out.unshift(String(value % 256))
+    value = Math.floor(value / 256)
+  }
+  return out.join(".")
+}
+
+var DNS_BYPASSED_NOTICE = "DNS is bypassing the TUN, so rules only see IPs."
+var DNS_ROUTED_STATUS = "DNS routed through mihomo."
+
+// The same three settings mihomo makes, run by the user's own `resolvectl`:
+// resolved asks polkit for each, so the password dialog comes from the system
+// and the plugin itself never runs anything as root. That is three prompts —
+// the same three mihomo costs at startup — because each setting is its own
+// polkit action. Run on the user's click only: a password dialog that appears
+// by itself after login is indistinguishable from something asking for a
+// password it should not have.
+var TUN_DNS_REPAIR_SCRIPT = [
+  "resolvectl dns \"$1\" \"$2\"",
+  "resolvectl domain \"$1\" \"~.\"",
+  "resolvectl default-route \"$1\" yes"
+].join(" && ")
+
+function tunDnsRepairCommand(device, server) {
+  if (!validDevice(device) || String(server || "") === "") return []
+  return ["sh", "-c", TUN_DNS_REPAIR_SCRIPT, "sh", String(device), String(server)]
+}
+
 // One probe per refresh instead of five processes. It answers: is the CLI on
 // PATH, where is the mihomo binary, what does systemd think of mihomo.service,
 // when did it last come up, and has the subscription ever been written to disk.

@@ -390,6 +390,7 @@ Panel {
           // is nothing to aim the test at.
           if (root.cursorTarget.indexOf("node:") === 0) mihoro.testGroupDelay(root.cursorTarget.substring(5))
         }
+        else if ((root.panelPage === 1 || root.panelPage === 4) && key === "f") mihoro.repairTunDns()
         else if (root.panelPage === 1 && key === "i") root.openInstallPage()
         else if (root.panelPage === 1 && key === "m") root.cycleMode(1)
         else if (root.panelPage === 1 && key === "1") root.requestMode("rule")
@@ -508,6 +509,7 @@ Panel {
             implicitHeight: Math.max(noticeText.implicitHeight,
                 noticeClose.visible ? noticeClose.implicitHeight : 0)
               + (offersDiagnosis ? noticeDiagnose.implicitHeight + Style.space(4) : 0)
+              + (offersDnsFix ? noticeFixDns.implicitHeight + Style.space(4) : 0)
             property alias text: noticeText.text
 
             // One condition, read by both the button and this block's height.
@@ -519,6 +521,13 @@ Panel {
             readonly property bool offersDiagnosis: mihoro.actionStatus === ""
               && Model.canDiagnose(mihoro.lastErrorKind, mihoro.defaultAgent)
 
+            // A TUN whose DNS still goes to the physical link is a fault the
+            // user can only see as wrong routes, so page one names it while
+            // nothing more pressing is on the line.
+            readonly property bool showsDnsBypass: root.panelPage === 1
+              && mihoro.actionStatus === "" && mihoro.lastError === "" && mihoro.dnsBypassed
+            readonly property bool offersDnsFix: showsDnsBypass && !mihoro.repairingDns
+
             Text {
               id: noticeText
               anchors.left: parent.left
@@ -527,8 +536,10 @@ Panel {
               anchors.rightMargin: noticeClose.visible ? Style.space(6) : 0
               text: mihoro.actionStatus !== "" ? mihoro.actionStatus
                 : (mihoro.lastError !== "" ? mihoro.lastError
-                  : (root.panelPage === 1 ? mihoro.connection.detail : ""))
-              color: mihoro.lastError !== "" && mihoro.actionStatus === "" ? root.urgent : root.dim
+                  : (noticeBlock.showsDnsBypass ? Model.DNS_BYPASSED_NOTICE
+                    : (root.panelPage === 1 ? mihoro.connection.detail : "")))
+              color: (mihoro.lastError !== "" && mihoro.actionStatus === "") || noticeBlock.showsDnsBypass
+                ? root.urgent : root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               wrapMode: Text.WordWrap
@@ -574,6 +585,20 @@ Panel {
               bordered: true
               fontSize: Style.font.bodySmall
               onClicked: mihoro.diagnose()
+            }
+
+            Button {
+              id: noticeFixDns
+              visible: noticeBlock.offersDnsFix
+              anchors.left: parent.left
+              anchors.top: noticeText.bottom
+              anchors.topMargin: Style.space(4)
+              // `...` because it opens the system's password dialog.
+              text: "Fix DNS..."
+              foreground: root.foreground
+              bordered: true
+              fontSize: Style.font.bodySmall
+              onClicked: mihoro.repairTunDns()
             }
           }
 

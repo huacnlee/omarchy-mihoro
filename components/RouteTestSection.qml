@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "../Model.js" as Model
 
 Column {
   id: root
@@ -51,6 +52,38 @@ Column {
     wrapMode: Text.WordWrap
   }
 
+  // Every row here reads "DNS bypassed" while the TUN's DNS goes around it, so
+  // the cause and its fix sit above them. The fix's progress and failure
+  // report here too: this is the page it was pressed on.
+  readonly property string dnsNotice: root.service.actionStatus !== "" && root.service.repairingDns
+    ? root.service.actionStatus
+    : (root.service.lastError !== "" ? root.service.lastError
+      : (root.service.dnsBypassed ? Model.DNS_BYPASSED_NOTICE
+        : (root.service.actionStatus === Model.DNS_ROUTED_STATUS ? root.service.actionStatus : "")))
+
+  Text {
+    visible: root.dnsNotice !== ""
+    width: parent.width
+    text: root.dnsNotice
+    color: root.service.lastError !== "" || (root.service.dnsBypassed && !root.service.repairingDns)
+      ? Color.urgent : Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.58)
+    font.family: root.panelFontFamily
+    font.pixelSize: Style.font.bodySmall
+    wrapMode: Text.WordWrap
+    maximumLineCount: 3
+    elide: Text.ElideRight
+  }
+
+  Button {
+    visible: root.service.dnsBypassed && !root.service.repairingDns
+    // `...` because it opens the system's password dialog.
+    text: "Fix DNS..."
+    foreground: root.textColor
+    bordered: true
+    fontSize: Style.font.bodySmall
+    onClicked: root.service.repairTunDns()
+  }
+
   Repeater {
     model: root.service.routeTests
 
@@ -82,7 +115,7 @@ Column {
           anchors.verticalCenter: parent.verticalCenter
           text: modelData.result
           color: modelData.result === "Failed" || modelData.result === "Unavailable"
-            || modelData.result === "Not found" ? Color.urgent
+            || modelData.result === "Not found" || modelData.result === "DNS bypassed" ? Color.urgent
             : (modelData.result === "Testing..." || modelData.result === "Waiting..."
               ? Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.58)
               : root.textColor)

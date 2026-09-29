@@ -214,6 +214,10 @@ function parseConfigs(body) {
     mixedPort: Number(payload["mixed-port"]) || 0,
     allowLan: payload["allow-lan"] === true,
     tunEnabled: tunEnabled,
+    tunDevice: tunEnabled === null ? "" : String(tun.device || ""),
+    tunAutoRoute: tunEnabled !== null && tun["auto-route"] === true,
+    tunInet4Address: tunEnabled !== null && tun["inet4-address"] instanceof Array
+      ? String(tun["inet4-address"][0] || "") : "",
     logLevel: String(payload["log-level"] || "")
   }
 }
