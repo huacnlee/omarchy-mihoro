@@ -302,6 +302,20 @@ def main():
                 candidate[key] = current[key]
             else:
                 candidate.pop(key, None)
+
+        # `dns` is infrastructure, not a preference. mihomo's TUN adapter
+        # hijacks `0.0.0.0:53` by default, so a subscription that ships only
+        # proxies, groups and rules — no `dns` section — would leave the core
+        # intercepting every resolver on the host with nothing listening behind
+        # it. The host then fails to resolve anything at all, which reads as
+        # "the proxy is broken" rather than as a missing config section.
+        #
+        # Unconditional preservation is not the answer either: a subscription
+        # that does carry `dns` (most full configs do, often with a tuned
+        # fallback-filter) must keep it. So the incoming section wins when it
+        # is there, and the previous config's is carried over when it is not.
+        if not isinstance(candidate.get("dns"), dict) and isinstance(current.get("dns"), dict):
+            candidate["dns"] = current["dns"]
     else:
         candidate = current
 
