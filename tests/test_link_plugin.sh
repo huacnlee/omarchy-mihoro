@@ -32,11 +32,14 @@ print("manifest ok")
 PY
 
 # The plugin schedules the CLI the user installed. It must never install,
-# upgrade, or remove it, and must never ask for root.
+# upgrade, or remove it, and must never ask for root — except for the one
+# `pkexec` behind Fix DNS..., which installs the TUN DNS polkit rule (see
+# DESIGN.md) and is checked below.
 for file in Model.js Service.qml Panel.qml components/*.qml scripts/link-plugin.sh; do
   ! grep -Eq 'mihoro[[:space:]]+(uninstall|upgrade)' "$file" \
     || { echo "$file invokes a destructive mihoro subcommand" >&2; exit 1; }
-  ! grep -Eq '\b(sudo|pkexec)\b' "$file" \
+  ! grep -v '^  return \["pkexec", "sh", "-c", TUN_DNS_REPAIR_SCRIPT, "sh",$' "$file" \
+      | grep -Eq '\bsudo\b|"pkexec"|\bpkexec[[:space:]]' \
     || { echo "$file escalates privileges" >&2; exit 1; }
 done
 

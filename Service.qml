@@ -327,13 +327,13 @@ Item {
     tunDnsProcess.running = true
   }
 
-  // Only ever on the user's click: see `Model.TUN_DNS_REPAIR_SCRIPT`.
+  // Only ever on the user's click: see `Model.tunDnsRule`.
   function repairTunDns() {
     if (!dnsBypassed || tunDnsRepairProcess.running || !liveConfigs) return
-    var command = Model.tunDnsRepairCommand(liveConfigs.tunDevice,
+    var command = Model.tunDnsRepairCommand(Quickshell.env("USER") || "", liveConfigs.tunDevice,
       Model.tunDnsServer(liveConfigs.tunInet4Address))
     if (command.length === 0) {
-      reportError("Could not work out the TUN's DNS address.")
+      reportError("Could not work out the TUN's DNS settings.")
       return
     }
     lastError = ""
@@ -1150,8 +1150,8 @@ Item {
     onExited: function(exitCode) {
       root.actionStatus = ""
       if (exitCode !== 0) {
-        // resolvectl's own words: "Access denied" for a dismissed dialog,
-        // "Interactive authentication required" with no agent to show one.
+        // pkexec's or resolvectl's own words, e.g. "Not authorized" for a
+        // dismissed dialog.
         var detail = String(tunDnsRepairErr.text || "").trim().split("\n").pop()
         root.reportError("Could not route DNS through mihomo" + (detail !== "" ? ": " + detail : "."))
       } else {

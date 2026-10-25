@@ -127,9 +127,13 @@ credential.
   bare IPs, so rules match no domain and the route test finds nothing. The
   panel reads the link back on every refresh (no privilege needed) and, while
   it is bypassed, says so on page one and on the route test, with
-  `Fix DNS...` (`f`) re-running the same three settings. The dialog is the
-  system's: the plugin never runs anything as root, and never raises a
-  password prompt the user did not ask for.
+  `Fix DNS...` (`f`). The fix is one system password dialog (`pkexec`) that
+  makes the same three settings and installs a polkit rule letting this user
+  make them on this TUN device only, so the next login's core succeeds on its
+  own and the notice does not come back. That rule (one file per user, named
+  in the README with how to remove it) is the one thing the plugin ever writes
+  as root, and the plugin never raises a password prompt the user did not ask
+  for.
 - **Local rules enhance a subscription; they do not replace it.** Each saved
   subscription owns an ordered list of structured DOMAIN, DOMAIN-SUFFIX,
   DOMAIN-KEYWORD, and GEOSITE rules. The list order is the match priority and

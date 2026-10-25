@@ -604,15 +604,50 @@ assert.strictEqual(model.tunDnsServer("255.255.255.255/32"), "")
 assert.strictEqual(model.tunDnsServer("fdfe::1/126"), "")
 assert.strictEqual(model.tunDnsServer(""), "")
 
-// The plugin never asks for root itself: resolved asks polkit for each setting.
-const repair = model.tunDnsRepairCommand("utun1024", "198.18.0.2")
-sameList(repair,
-  ["sh", "-c", model.TUN_DNS_REPAIR_SCRIPT, "sh", "utun1024", "198.18.0.2"])
+// One pkexec, so one password dialog: it makes the three settings as root and
+// installs the rule that lets mihomo make them itself at the next login.
+const repair = model.tunDnsRepairCommand("alice", "utun1024", "198.18.0.2")
+sameList(repair, ["pkexec", "sh", "-c", model.TUN_DNS_REPAIR_SCRIPT, "sh",
+  "utun1024", "198.18.0.2", model.tunDnsRule("alice", "utun1024"),
+  "/etc/polkit-1/rules.d/50-omarchy-mihoro-tun-dns-alice.rules"])
 assert.ok(model.TUN_DNS_REPAIR_SCRIPT.indexOf('resolvectl dns "$1" "$2"') >= 0)
 assert.ok(model.TUN_DNS_REPAIR_SCRIPT.indexOf('resolvectl domain "$1" "~."') >= 0)
 assert.ok(model.TUN_DNS_REPAIR_SCRIPT.indexOf('resolvectl default-route "$1" yes') >= 0)
-sameList(model.tunDnsRepairCommand("utun1024", ""), [])
-sameList(model.tunDnsRepairCommand("", "198.18.0.2"), [])
-sameList(model.tunDnsRepairCommand("-x", "198.18.0.2"), [])
+// Per user, so two accounts on one machine keep their own rule.
+assert.notStrictEqual(model.tunDnsRulePath("alice"), model.tunDnsRulePath("bob"))
+sameList(model.tunDnsRepairCommand("alice", "utun1024", ""), [])
+sameList(model.tunDnsRepairCommand("alice", "", "198.18.0.2"), [])
+sameList(model.tunDnsRepairCommand("alice", "-x", "198.18.0.2"), [])
+sameList(model.tunDnsRepairCommand("", "utun1024", "198.18.0.2"), [])
+
+// The rule grants exactly mihomo's three settings, to this user, on this link.
+function ruleAnswer(rule, actionId, user, ifname) {
+  let rules = []
+  const polkit = { Result: { YES: "yes" }, addRule: f => rules.push(f) }
+  new Function("polkit", rule)(polkit)
+  const action = { id: actionId, lookup: key => key === "ifname" ? ifname : undefined }
+  return rules.map(f => f(action, { user: user })).find(r => r !== undefined)
+}
+const rule = model.tunDnsRule("alice", "utun1024")
+for (const id of model.TUN_DNS_ACTIONS)
+  assert.strictEqual(ruleAnswer(rule, id, "alice", "utun1024"), "yes")
+assert.strictEqual(ruleAnswer(rule, "org.freedesktop.resolve1.set-dns-servers", "alice", "eno1"), undefined)
+assert.strictEqual(ruleAnswer(rule, "org.freedesktop.resolve1.set-dns-servers", "other", "utun1024"), undefined)
+assert.strictEqual(ruleAnswer(rule, "org.freedesktop.resolve1.set-dnssec", "alice", "utun1024"), undefined)
+// Names that would change the rule's JavaScript are refused, not escaped.
+assert.strictEqual(model.tunDnsRule('al"ice', "utun1024"), "")
+assert.strictEqual(model.tunDnsRule("alice", 'utun"); x("'), "")
+
+// The script the dialog runs, end to end, with resolvectl stubbed.
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "omahoro-dns-"))
+fs.writeFileSync(path.join(scratch, "resolvectl"), '#!/bin/sh\necho "$@" >> "$(dirname "$0")/calls"\n', { mode: 0o755 })
+const rulePath = path.join(scratch, "50.rules")
+execFileSync("sh", ["-c", model.TUN_DNS_REPAIR_SCRIPT, "sh", "utun1024", "198.18.0.2", rule, rulePath],
+  { env: { PATH: scratch + ":" + process.env.PATH } })
+assert.strictEqual(fs.readFileSync(rulePath, "utf8"), rule)
+assert.ok(!fs.existsSync(rulePath + ".tmp"))
+assert.strictEqual(fs.readFileSync(path.join(scratch, "calls"), "utf8"),
+  "dns utun1024 198.18.0.2\ndomain utun1024 ~.\ndefault-route utun1024 yes\n")
+fs.rmSync(scratch, { recursive: true })
 
 console.log("model tests passed")

@@ -63,6 +63,19 @@ Remove the Omarchy plugin:
 omarchy plugin remove mihoro.omarchy
 ```
 
+With TUN on, mihomo has to point systemd-resolved's DNS at the TUN, and each
+of those settings needs polkit. At login mihomo usually starts before the
+desktop's polkit agent, so they fail and DNS goes around the TUN. When the
+panel sees this it shows `Fix DNS...`. That button asks for your password
+once, applies the settings, and installs a polkit rule
+`/etc/polkit-1/rules.d/50-omarchy-mihoro-tun-dns-$USER.rules`, which lets your
+user make only those settings, and only on the TUN device, so later logins
+work on their own. Removing the plugin does not delete the rule; to delete it:
+
+```bash
+sudo rm /etc/polkit-1/rules.d/50-omarchy-mihoro-tun-dns-$USER.rules
+```
+
 The panel looks for the mihomo binary where `mihomo_binary_path` in
 `~/.config/mihoro.toml` says it is, and falls back to your `PATH`. If you
 installed mihomo somewhere else, point that key at it.
