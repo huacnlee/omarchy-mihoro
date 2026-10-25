@@ -127,22 +127,71 @@ function tunDnsServer(cidr) {
 var DNS_BYPASSED_NOTICE = "DNS is bypassing the TUN, so rules only see IPs."
 var DNS_ROUTED_STATUS = "DNS routed through mihomo."
 
-// The same three settings mihomo makes, run by the user's own `resolvectl`:
-// resolved asks polkit for each, so the password dialog comes from the system
-// and the plugin itself never runs anything as root. That is three prompts —
-// the same three mihomo costs at startup — because each setting is its own
-// polkit action. Run on the user's click only: a password dialog that appears
-// by itself after login is indistinguishable from something asking for a
-// password it should not have.
+// The fix has to outlast the click. Every resolved setting is its own polkit
+// action, and each `resolvectl` run is a new subject, so repairing it as the
+// user costs three password dialogs — and the next login loses the same race
+// again. So the click runs one `pkexec` instead: as root it makes the same three
+// settings (root needs no polkit), and it installs a rule that lets this user
+// make them on this one link without a dialog. From the next login on,
+// mihomo's own `resolvectl` runs succeed with no agent up at all.
+//
+// The rule is as narrow as resolved lets it be: the three actions mihomo
+// needs, the user who clicked, and the TUN device by name — resolved passes
+// the link as the `ifname` detail. A link it does not name falls through to
+// the system's defaults.
+// One file per user, so a second account's click never replaces the first's.
+function tunDnsRulePath(user) {
+  return "/etc/polkit-1/rules.d/50-omarchy-mihoro-tun-dns-" + String(user) + ".rules"
+}
+var TUN_DNS_ACTIONS = [
+  "org.freedesktop.resolve1.set-dns-servers",
+  "org.freedesktop.resolve1.set-domains",
+  "org.freedesktop.resolve1.set-default-route"
+]
+
+// Both names are written into the rule's JavaScript (and the user into its
+// path), so only plain ones are.
+function validUser(user) {
+  return /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(String(user || ""))
+}
+
+function validRuleDevice(device) {
+  return validDevice(device) && /^[A-Za-z0-9_.:-]+$/.test(String(device))
+}
+
+function tunDnsRule(user, device) {
+  if (!validUser(user) || !validRuleDevice(device)) return ""
+  return [
+    "// Written by the Omarchy mihoro plugin's Fix DNS... button. Lets " + user,
+    "// point systemd-resolved at mihomo's TUN (" + device + ") without a password,",
+    "// so the core can do it at login before any polkit agent is up.",
+    "polkit.addRule(function(action, subject) {",
+    "  if (" + JSON.stringify(TUN_DNS_ACTIONS) + ".indexOf(action.id) >= 0 &&",
+    "      subject.user == " + JSON.stringify(String(user)) + " &&",
+    "      action.lookup(\"ifname\") == " + JSON.stringify(String(device)) + ") {",
+    "    return polkit.Result.YES;",
+    "  }",
+    "});",
+    ""
+  ].join("\n")
+}
+
+// $1 device, $2 server, $3 rule text, $4 rule path. The rule is written through
+// a temporary file so polkitd never reads half of one.
 var TUN_DNS_REPAIR_SCRIPT = [
+  "umask 022",
+  "printf '%s' \"$3\" > \"$4.tmp\"",
+  "mv -f \"$4.tmp\" \"$4\"",
   "resolvectl dns \"$1\" \"$2\"",
   "resolvectl domain \"$1\" \"~.\"",
   "resolvectl default-route \"$1\" yes"
 ].join(" && ")
 
-function tunDnsRepairCommand(device, server) {
-  if (!validDevice(device) || String(server || "") === "") return []
-  return ["sh", "-c", TUN_DNS_REPAIR_SCRIPT, "sh", String(device), String(server)]
+function tunDnsRepairCommand(user, device, server) {
+  var rule = tunDnsRule(user, device)
+  if (rule === "" || String(server || "") === "") return []
+  return ["pkexec", "sh", "-c", TUN_DNS_REPAIR_SCRIPT, "sh",
+    String(device), String(server), rule, tunDnsRulePath(user)]
 }
 
 // One probe per refresh instead of five processes. It answers: is the CLI on
