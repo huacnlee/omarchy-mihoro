@@ -129,8 +129,9 @@ credential.
   it is bypassed, says so on page one and on the route test, with
   `Fix DNS...` (`f`). The fix is one system password dialog (`pkexec`) that
   makes the same three settings and installs a polkit rule letting this user
-  make them on this TUN device only, so the next login's core succeeds on its
-  own and the notice does not come back. That rule (one file per user, named
+  make them, and revert them, on this TUN device only (matched on resolved's
+  `interface` detail), so the next login's core, and any reload that rebuilds
+  the TUN, succeeds on its own and the notice does not come back. That rule (one file per user, named
   in the README with how to remove it) is the one thing the plugin ever writes
   as root, and the plugin never raises a password prompt the user did not ask
   for.
@@ -144,9 +145,10 @@ credential.
   subscription's rules, asks the installed mihomo core to validate it, and
   only then atomically replaces `config.yaml` and asks the running core to
   reload it in place (`PUT /configs?force=true`), restarting the service only
-  when the core does not answer. A reload keeps the TUN up; a restart rebuilds
-  it, and on a systemd-resolved host every DNS step of that rebuild is a polkit
-  prompt. Enabling local rules moves config updates from mihoro's cron entry to
+  when the core does not answer. A reload keeps an unchanged TUN up; a restart,
+  or a reload whose tun or ipv6 settings changed, rebuilds it, and on a
+  systemd-resolved host every DNS step of that rebuild is a polkit check that
+  only the rule above answers without a prompt. Enabling local rules moves config updates from mihoro's cron entry to
   the plugin's user timer; unrelated cron entries are retained. Failure leaves
   the running file untouched.
 

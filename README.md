@@ -69,8 +69,10 @@ desktop's polkit agent, so they fail and DNS goes around the TUN. When the
 panel sees this it shows `Fix DNS...`. That button asks for your password
 once, applies the settings, and installs a polkit rule
 `/etc/polkit-1/rules.d/50-omarchy-mihoro-tun-dns-$USER.rules`, which lets your
-user make only those settings, and only on the TUN device, so later logins
-work on their own. Removing the plugin does not delete the rule; to delete it:
+user make only those settings (and clear them when the TUN goes down), and only
+on the TUN device, so later logins and config reloads work on their own. The
+rule needs systemd 256 or later. A rule written by an older version of the
+plugin never matched; when `Fix DNS...` shows again, one click replaces it. Removing the plugin does not delete the rule; to delete it:
 
 ```bash
 sudo rm /etc/polkit-1/rules.d/50-omarchy-mihoro-tun-dns-$USER.rules
