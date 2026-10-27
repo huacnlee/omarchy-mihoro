@@ -135,10 +135,12 @@ var DNS_ROUTED_STATUS = "DNS routed through mihomo."
 // make them on this one link without a dialog. From the next login on,
 // mihomo's own `resolvectl` runs succeed with no agent up at all.
 //
-// The rule is as narrow as resolved lets it be: the three actions mihomo
-// needs, the user who clicked, and the TUN device by name — resolved passes
-// the link as the `ifname` detail. A link it does not name falls through to
-// the system's defaults.
+// The rule is as narrow as resolved lets it be: the actions mihomo needs, the
+// user who clicked, and the TUN device by name — resolved (v256 and later)
+// passes the link as the `interface` detail. mihomo makes the three settings
+// when the TUN comes up and runs `resolvectl revert` when it goes down, so a
+// reload that rebuilds the TUN needs all four. A link it does not name falls
+// through to the system's defaults.
 // One file per user, so a second account's click never replaces the first's.
 function tunDnsRulePath(user) {
   return "/etc/polkit-1/rules.d/50-omarchy-mihoro-tun-dns-" + String(user) + ".rules"
@@ -146,7 +148,8 @@ function tunDnsRulePath(user) {
 var TUN_DNS_ACTIONS = [
   "org.freedesktop.resolve1.set-dns-servers",
   "org.freedesktop.resolve1.set-domains",
-  "org.freedesktop.resolve1.set-default-route"
+  "org.freedesktop.resolve1.set-default-route",
+  "org.freedesktop.resolve1.revert"
 ]
 
 // Both names are written into the rule's JavaScript (and the user into its
@@ -168,7 +171,7 @@ function tunDnsRule(user, device) {
     "polkit.addRule(function(action, subject) {",
     "  if (" + JSON.stringify(TUN_DNS_ACTIONS) + ".indexOf(action.id) >= 0 &&",
     "      subject.user == " + JSON.stringify(String(user)) + " &&",
-    "      action.lookup(\"ifname\") == " + JSON.stringify(String(device)) + ") {",
+    "      action.lookup(\"interface\") == " + JSON.stringify(String(device)) + ") {",
     "    return polkit.Result.YES;",
     "  }",
     "});",

@@ -620,17 +620,20 @@ sameList(model.tunDnsRepairCommand("alice", "", "198.18.0.2"), [])
 sameList(model.tunDnsRepairCommand("alice", "-x", "198.18.0.2"), [])
 sameList(model.tunDnsRepairCommand("", "utun1024", "198.18.0.2"), [])
 
-// The rule grants exactly mihomo's three settings, to this user, on this link.
+// The rule grants exactly what mihomo runs, to this user, on this link.
+// resolved names the link in the `interface` detail (resolved-link-bus.c).
 function ruleAnswer(rule, actionId, user, ifname) {
   let rules = []
   const polkit = { Result: { YES: "yes" }, addRule: f => rules.push(f) }
   new Function("polkit", rule)(polkit)
-  const action = { id: actionId, lookup: key => key === "ifname" ? ifname : undefined }
+  const action = { id: actionId, lookup: key => key === "interface" ? ifname : undefined }
   return rules.map(f => f(action, { user: user })).find(r => r !== undefined)
 }
 const rule = model.tunDnsRule("alice", "utun1024")
 for (const id of model.TUN_DNS_ACTIONS)
   assert.strictEqual(ruleAnswer(rule, id, "alice", "utun1024"), "yes")
+// sing-tun's teardown: without it a reload that rebuilds the TUN prompts first.
+assert.ok(model.TUN_DNS_ACTIONS.indexOf("org.freedesktop.resolve1.revert") >= 0)
 assert.strictEqual(ruleAnswer(rule, "org.freedesktop.resolve1.set-dns-servers", "alice", "eno1"), undefined)
 assert.strictEqual(ruleAnswer(rule, "org.freedesktop.resolve1.set-dns-servers", "other", "utun1024"), undefined)
 assert.strictEqual(ruleAnswer(rule, "org.freedesktop.resolve1.set-dnssec", "alice", "utun1024"), undefined)
