@@ -10,6 +10,8 @@ pick a proxy node per group with measured delays, toggle TUN, keep several
 subscriptions to switch between, and prepend per-subscription local routing
 rules without losing them on automatic updates.
 
+**If this helps you, please [sponsor me](https://github.com/sponsors/huacnlee).**
+
 ## Features
 
 - Connection status, live up/down speed, and a one-minute traffic history
